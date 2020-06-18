@@ -1,4 +1,0 @@
-/media/saber/easystore/libpbs/cmake-build-debug/CMakeFiles/rebuild_cache.dir
-/media/saber/easystore/libpbs/cmake-build-debug/CMakeFiles/edit_cache.dir
-/media/saber/easystore/libpbs/cmake-build-debug/CMakeFiles/test.dir
-/media/saber/easystore/libpbs/cmake-build-debug/CMakeFiles/test_pbs_params.dir
