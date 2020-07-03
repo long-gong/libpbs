@@ -1,5 +1,5 @@
-#include "pbs_params.h"
 #include <gtest/gtest.h>
+#include "pbs_params.h"
 
 TEST(PbsParamsTest, m3d) {
   size_t m =6, n = 8;
