@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package reconciliation;
+
+// The estimation service
+service Estimation {
+    rpc Estimate(EstimateRequest) returns (EstimateReply) {}
+}
+
+// 
+message EstimateRequest {
+    repeated int32 sketches = 1;
+}
+
+// 
+message EstimateReply {
+    float estimated_value = 1;
+}
