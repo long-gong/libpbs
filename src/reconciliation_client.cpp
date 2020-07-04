@@ -96,6 +96,16 @@ int main(int argc, char **argv) {
     std::cout << "Estimate :  " << reply << " (" << n << ")" << std::endl;
     std::this_thread::sleep_for(5s);
   }
+  // Sample results:
+//  Estimate :  9.59375 (8)
+//  Estimate :  17.5 (16)
+//  Estimate :  26.2812 (32)
+//  Estimate :  59.9062 (64)
+//  Estimate :  133.688 (128)
+//  Estimate :  270.562 (256)
+//  Estimate :  573.125 (512)
+//  Estimate :  923.531 (1024)
+//  Estimate :  1827.06 (2048)
 
   return 0;
 }

@@ -3,9 +3,10 @@
 set -e
 
 
-sudo apt-get install libboost-serialization-dev \
+sudo apt-get install build-essential libboost-serialization-dev \
 libboost-filesystem-dev \
-libeigen-dev
+libeigen-dev \
+autoconf libtool pkg-config
 
 # shellcheck disable=SC2034
 # shellcheck disable=SC2046
@@ -49,6 +50,22 @@ cmake .. -DCMAKE_INSTALL_PREFIX=${install_dir}
 make -j$(nproc)
 make install
 cd /tmp && rm -rf fmt
+
+cd /tmp && rm -rf xxHash
+git clone https://github.com/Cyan4973/xxHash.git
+mkdir xxHash/build && cd xxHash/build
+cmake .. -DCMAKE_INSTALL_PREFIX=${install_dir}
+make -j$(nproc)
+make install
+cd /tmp && rm -rf xxHash
+
+
+cd /tmp && rm -rf grpc
+git clone https://github.com/grpc/grpc.git
+cd grpc
+git submodule update --init --recursive
+sudo ./test/distrib/cpp/run_distrib_test_cmake.sh
+cd /tmp && rm -rf grpc
 
 echo "DONE!"
 
