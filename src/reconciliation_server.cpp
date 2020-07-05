@@ -1,57 +1,165 @@
-#include <memory>
+#include <grpcpp/ext/proto_server_reflection_plugin.h>
+#include <grpcpp/grpcpp.h>
+#include <grpcpp/health_check_service_interface.h>
+#include <tow.h>
+#include <tsl/ordered_map.h>
+#include <tsl/ordered_set.h>
+#include <xxhash_wrapper.h>
+
 #include <iostream>
+#include <memory>
 #include <string>
 #include <thread>
 
-#include <grpcpp/grpcpp.h>
-#include <grpcpp/health_check_service_interface.h>
-#include <grpcpp/ext/proto_server_reflection_plugin.h>
-
+#include "pinsketch.h"
 #include "reconciliation.grpc.pb.h"
-#include <tow.h>
-#include <xxhash_wrapper.h>
-
 
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
+using grpc::StatusCode;
 
-using reconciliation::EstimateRequest;
 using reconciliation::EstimateReply;
+using reconciliation::EstimateRequest;
 using reconciliation::Estimation;
 
-constexpr unsigned DEFAULT_SKETCHES_ = 128;
-constexpr unsigned DEFAULT_SEED = 142857;
+using reconciliation::PinSketchReply;
+using reconciliation::PinSketchRequest;
+
+using reconciliation::KeyValue;
+using reconciliation::SynchronizeMessage;
+
+#include "constants.h"
 
 // Logic and data behind the server's behavior.
+// template<typename Key=int, typename Value=std::string>
 class EstimationServiceImpl final : public Estimation::Service {
+
   Status Estimate(ServerContext *context, const EstimateRequest *request,
                   EstimateReply *reply) override {
     double d = 0.0, tmp;
+    if (_sketches.empty()) {
+      if (_key_value_pairs == nullptr) {
+        return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
+      }
+      LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(), _key_value_pairs->cend());
+    }
 
     for (size_t i = 0; i < _sketches.size(); ++i) {
       tmp = _sketches[i] - request->sketches(i);
       d += tmp * tmp;
     }
-    reply->set_estimated_value(static_cast<float>(d / _estimator.num_sketches()));
+
+    reply->set_estimated_value(
+        static_cast<float>(d / _estimator.num_sketches()));
+
+    _estimated_diff =
+        static_cast<ssize_t>(INFLATION_RATIO * reply->estimated_value());
     return Status::OK;
   }
- public:
-  EstimationServiceImpl() : Estimation::Service(), _estimator(DEFAULT_SKETCHES_, DEFAULT_SEED) {}
-//  EstimationServiceImpl(unsigned num_sketches, unsigned seed) : Estimation::Service(), _estimator(num_sketches, seed) {}
 
-  // local computation
-  template<typename Iterator>
+  Status Synchronize(ServerContext *context, const SynchronizeMessage *request,
+                     SynchronizeMessage *response) override {
+    if (_key_value_pairs == nullptr) {
+      return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
+    }
+
+    for (const auto &kv : request->pushes()) {
+      Key key = static_cast<Key>(kv.key());
+      _key_value_pairs->insert({key, kv.value()});
+    }
+
+    for (const auto &key : request->pulls()) {
+      Key key_ = static_cast<Key>(key);
+      if (!(_key_value_pairs->contains(key_))) {
+        return Status(StatusCode::NOT_FOUND,
+                      "Some required keys can not be found in the key-value "
+                      "pairs were found on server side");
+      }
+      auto kv = response->mutable_pushes()->Add();
+      kv->set_key(key);
+      kv->set_value((*_key_value_pairs)[key_]);
+    }
+    return Status::OK;
+  }
+
+  Status ReconcilePinSketch(ServerContext *context,
+                            const PinSketchRequest *request,
+                            PinSketchReply *response) {
+    if (_estimated_diff == -1 )
+      return Status(StatusCode::UNAVAILABLE, "Please call Estimate() first");
+    if (_key_value_pairs == nullptr)
+      return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
+
+
+    PinSketch ps(sizeof(Key) * BITS_IN_ONE_BYTE, _estimated_diff);
+    ps.encode_key_value_pairs(_key_value_pairs->cbegin(),
+                              _key_value_pairs->cend());
+
+    std::vector<uint64_t> differences;
+    bool succeed =
+        ps.decode((unsigned char *)&(request->sketch()[0]), differences);
+    if (!succeed) {
+      // do something
+    }
+
+    for (const auto key : differences) {
+      Key key_ = static_cast<Key>(key);
+      if (_key_value_pairs->contains(key)) {
+        auto kv = response->mutable_pushed_key_values()->Add();
+        kv->set_key(key_);
+        kv->set_value((*_key_value_pairs)[key_]);
+      } else {
+        response->mutable_missing_keys()->Add(key_);
+      }
+    }
+
+
+    return Status::OK;
+  }
+
+ public:
+  EstimationServiceImpl()
+      : Estimation::Service(),
+        _estimator(DEFAULT_SKETCHES_, DEFAULT_SEED),
+        _estimated_diff(-1),
+        _key_value_pairs(nullptr) {}
+
+
+  void set_key_value_pairs(
+      const std::shared_ptr<tsl::ordered_map<Key, Value>>& other) {
+    _key_value_pairs = other;
+  }
+
+  void set_estimated_diff(size_t d) { _estimated_diff = d; }
+
+  ssize_t estimated_diff() const { return _estimated_diff; }
+
+  const tsl::ordered_map<Key, Value> *key_value_pairs() const {
+    return _key_value_pairs.get();
+  }
+
+  template <typename Iterator>
   void LocalSketchFor(Iterator first, Iterator last) {
     _sketches = _estimator.apply(first, last);
   }
+
+  template <typename Iterator>
+  void LocalSketchForKeyValuePairs(Iterator first, Iterator last) {
+    _sketches = _estimator.apply_key_value_pairs(first, last);
+  }
+
  private:
   TugOfWarHash<XXHash> _estimator;
   std::vector<int> _sketches;
+
+  ssize_t _estimated_diff;
+  std::shared_ptr<tsl::ordered_map<Key, Value>> _key_value_pairs;
 };
 
-void RunServer() {
+
+void test_estimation_service() {
   std::string server_address("0.0.0.0:50051");
   EstimationServiceImpl service;
   std::vector<int> empty_set;
@@ -67,14 +175,52 @@ void RunServer() {
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+  std::cout << "Server (testing estimation service) listening on " << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
   server->Wait();
 }
 
+void test_pinsketch_service() {
+  std::string server_address("0.0.0.0:50051");
+  EstimationServiceImpl service;
+
+  auto server_data_ptr = std::make_shared<tsl::ordered_map<Key, Value>>(tsl::ordered_map<Key, Value>{
+      {4,"4444"}, {6, "666666"}, {3, "333"}, {5, "55555"}
+  });
+
+  auto print = [](const std::pair<Key,Value>& kv) {
+    std::cout << "(" << kv.first << ", " << kv.second << ") ";
+  };
+  std::cout << "Before reconciliation: \n";
+  std::for_each(server_data_ptr->cbegin(), server_data_ptr->cend(), print);
+
+  service.set_key_value_pairs(server_data_ptr);
+  service.set_estimated_diff(4);
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server (testing pinsketch service) listening on " << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  server->Wait();
+}
+
+void RunServer() {
+  // TODO
+}
+
 int main(int argc, char **argv) {
-  RunServer();
+  test_pinsketch_service();
   return 0;
 }

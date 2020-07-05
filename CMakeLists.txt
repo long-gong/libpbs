@@ -5,6 +5,7 @@ project(libpbs)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_FLAGS "-O3 -fPIC -Wall")
 set(PROJECT_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR})
+set(THIRD_PARTY 3rd)
 
 include_directories(src 3rd/include)
 

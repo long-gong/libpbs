@@ -5,6 +5,10 @@ package reconciliation;
 // The estimation service
 service Estimation {
     rpc Estimate(EstimateRequest) returns (EstimateReply) {}
+
+    rpc ReconcilePinSketch(PinSketchRequest) returns (PinSketchReply) {}
+
+    rpc Synchronize(SynchronizeMessage) returns (SynchronizeMessage) {}
 }
 
 // 
@@ -16,3 +20,23 @@ message EstimateRequest {
 message EstimateReply {
     float estimated_value = 1;
 }
+
+message PinSketchRequest {
+   string sketch = 1;
+}
+
+message PinSketchReply {
+   repeated int32 missing_keys = 1;
+   repeated KeyValue pushed_key_values = 2;
+}
+
+message KeyValue {
+ int32 key = 1;
+ string value = 2;
+}
+
+message SynchronizeMessage {
+    repeated KeyValue pushes = 1;
+    repeated int32 pulls = 2;
+}
+

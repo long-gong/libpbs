@@ -42,6 +42,11 @@ cp -r stlcache/include "${install_dir}"
 cd /tmp && rm -rf stlcache
 
 
+cd /tmp && rm -rf orderd-map
+git clone https://github.com/Tessil/ordered-map.git
+cp -r orderd-map/include "${install_dir}"
+cd /tmp && rm -rf orderd-map
+
 cd /tmp && rm -rf fmt
 echo "Install dependencies: fmtlib to ${install_dir} ..."
 git clone https://github.com/fmtlib/fmt.git
@@ -66,6 +71,14 @@ cd grpc
 git submodule update --init --recursive
 sudo ./test/distrib/cpp/run_distrib_test_cmake.sh
 cd /tmp && rm -rf grpc
+
+
+cd /tmp && rm -rf minisketch
+git clone https://github.com/sipa/minisketch.git
+cd minisketch
+./autogen.sh && ./configure --prefix=${install_dir}
+make -j && make install
+cd /tmp && rm -rf minisketch
 
 echo "DONE!"
 

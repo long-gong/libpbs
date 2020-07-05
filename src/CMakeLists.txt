@@ -36,6 +36,10 @@ include_directories("${CMAKE_CURRENT_BINARY_DIR}")
 add_library(proto_obj OBJECT IMPORTED proto_srcs)
 add_library(grpc_obj OBJECT IMPORTED grpc_srcs)
 
+
+SET(CMAKE_EXE_LINKER_FLAGS
+        "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,${THIRD_PARTY}/lib")
+
 add_executable(server "reconciliation_server.cpp" ${proto_obj}  ${grpc_obj}
         ${proto_srcs}
         ${grpc_srcs})
@@ -46,16 +50,33 @@ target_include_directories(server
 target_link_libraries(server
         gRPC::grpc++ gRPC::grpc++_reflection
         ${_PROTOBUF_LIBPROTOBUF}
-        xxhash)
+        xxhash
+        minisketch)
 
 add_executable(client "reconciliation_client.cpp" ${proto_obj}  ${grpc_obj}
         ${proto_srcs}
         ${grpc_srcs})
-message("${GRPCPP_INCLUDE_DIRS} | ${GRPCPP_LIBRARIES}")
 target_include_directories(client
         PRIVATE
         ${GRPCPP_INCLUDE_DIRS})
 target_link_libraries(client
         gRPC::grpc++ gRPC::grpc++_reflection
         ${_PROTOBUF_LIBPROTOBUF}
-        xxhash)
+        xxhash
+        minisketch)
+
+## TESTS ##
+add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp" ${proto_obj}  ${grpc_obj}
+        ${proto_srcs}
+        ${grpc_srcs})
+target_include_directories(test_reconciliation_services
+        PRIVATE
+        ${GRPCPP_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_reconciliation_services
+        gRPC::grpc++ gRPC::grpc++_reflection
+        ${_PROTOBUF_LIBPROTOBUF}
+        xxhash
+        minisketch
+        GTest::GTest
+        GTest::Main)
