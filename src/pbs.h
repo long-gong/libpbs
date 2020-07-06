@@ -27,7 +27,7 @@ const unsigned SEED_SALT = 1;
 }  // namespace
 
 using BitMap = boost::dynamic_bitset<>;
-template <typename KeyType>
+template<typename KeyType>
 class ParityBitmapSketch {
  public:
   ParityBitmapSketch(
@@ -42,7 +42,7 @@ class ParityBitmapSketch {
         num_groups_when_bch_fail_(num_groups_when_bch_fail),
         current_round_(0),
         remaining_num_groups_(
-            std::ceil((double)num_diffs / avg_diffs_per_group_)),
+            std::ceil((double) num_diffs / avg_diffs_per_group_)),
         initial_num_groups_(remaining_num_groups_),
         target_success_prob_(target_success_prob),
         bch_m_(0),
@@ -67,13 +67,13 @@ class ParityBitmapSketch {
   unsigned remaining_num_groups() const { return remaining_num_groups_; }
   size_t num_diffs() const { return num_diffs_; }
 
-  template <typename Iterator>
+  template<typename Iterator>
   std::vector<std::string> encode(Iterator first, Iterator last) {
     hash_partition(first, last);
-    return serilization();
+    return serialization();
   }
 
-  std::vector<std::string> serilization() {
+  std::vector<std::string> serialization() {
     std::vector<std::string> buffers;
     buffers.reserve(remaining_num_groups_);
     for (size_t g = 0; g < remaining_num_groups_; ++g)
@@ -81,11 +81,12 @@ class ParityBitmapSketch {
     return buffers;
   }
 
-  template <typename Iterator>
-  bool decode_from_xors(unsigned char *header, Iterator xor_first,
-                        Iterator xor_last, std::vector<KeyType> &reconciled) {
+  template<typename Iterator>
+  bool decode_from_xor(unsigned char *header, Iterator xor_first,
+                       Iterator xor_last, std::vector<KeyType> &reconciled, unsigned char *exception_indicator) {
     const size_t decode_header_len = std::ceil(std::log2(bch_capacity_ + 2));
     const uint32_t bch_failed_flag = (1u << decode_header_len) - 1u;
+
     std::vector<uint32_t> temp, temp2;
     BitReader reader(header);
     size_t i = 0, num_decoded = 0, bin_loc_offset = 0, xor_offset = 0;
@@ -99,13 +100,20 @@ class ParityBitmapSketch {
         bch_failed_groups.push_back(i);
       }
     }
+
+    exception_indicator = (unsigned char *) malloc((num_decoded + remaining_num_groups_ * 2 + 7) / 8);
+
+    BitWriter bit_writer(exception_indicator);
+
     for (size_t j = 0; j < num_decoded; ++j)
       temp2.push_back(reader.Read<uint32_t>(bch_capacity_));
 
     {
       i = 0;
+
       for (; i < remaining_num_groups_; ++i) {
         if (temp[i] != bch_failed_flag) {
+          bit_writer.Write(0, 1); // bch succeeded
           ssize_t p = temp[i];
           vector<uint> ind(bch_length_, 0);
           for (int k = 0; k < p; ++k) {
@@ -117,6 +125,7 @@ class ParityBitmapSketch {
           bin_loc_offset += p;
 
           if (xor_first[xor_offset] != 0) {
+            bit_writer.Write(1, 1); // exception I
             size_t old_size = groups_.size();
             groups_.resize(old_size + 1);
             group_ids_.resize(old_size + 1);
@@ -127,6 +136,8 @@ class ParityBitmapSketch {
               }
             }
             group_ids_[old_size] = group_ids_[i];
+          } else {
+            bit_writer.Write(0, 1); // exception I
           }
 
           for (int k = 1; k <= p; ++k) {
@@ -135,7 +146,8 @@ class ParityBitmapSketch {
               size_t group_id = get_group_id(possible_diff);
               size_t bin_index = get_bin_index(possible_diff);
               if (bin_index == temp2[k - 1 + bin_loc_offset] && group_id ==
-                      group_ids_[i]) {
+                  group_ids_[i]) {
+                bit_writer.Write(0, 1);
                 reconciled.push_back(possible_diff);
                 size_t old_size = groups_.size();
                 groups_.resize(old_size + 1);
@@ -146,14 +158,20 @@ class ParityBitmapSketch {
                     groups_[old_size].push_back(groups_[i][q]);
                 }
                 group_ids_[old_size] = group_ids_[i];
+              } else {
+                bit_writer.Write(1, 1);
               }
             }
           }
 
           xor_offset += p + 1;
+        } else {
+          bit_writer.Write(1, 1);
         }
       }
     }
+
+    bit_writer.Flush();
 
     for (auto j : bch_failed_groups) {
       size_t old_size = groups_.size();
@@ -161,7 +179,7 @@ class ParityBitmapSketch {
 
       for (size_t k = 0; k < groups_[j].size(); ++k) {
         size_t index = hash(groups_[i][k], group_partition_seed()) %
-                       num_groups_when_bch_fail_;
+            num_groups_when_bch_fail_;
         groups_[old_size + index].push_back(groups_[j][k]);
       }
     }
@@ -185,7 +203,7 @@ class ParityBitmapSketch {
     return false;
   }
 
-  template <typename Iterator, typename Iterator2>
+  template<typename Iterator, typename Iterator2>
   void decode(Iterator other_first, Iterator other_last, Iterator2 first,
               Iterator2 last, unsigned char *header,
               std::vector<KeyType> &xors) {
@@ -201,13 +219,13 @@ class ParityBitmapSketch {
          ++g, bi += decode_header_len) {
       std::vector<uint64_t> identified_bins;
       auto p =
-          decode_single_group((unsigned char *)&((*it)[0]), g, identified_bins);
+          decode_single_group((unsigned char *) &((*it)[0]), g, identified_bins);
       if (p < 0) {
         temp.push_back(bch_failed_flag);
       } else {
-        temp.push_back((uint32_t)p);
+        temp.push_back((uint32_t) p);
         for (ssize_t j = 0; j < p; ++j) {
-          temp2.push_back((uint32_t)identified_bins[j]);
+          temp2.push_back((uint32_t) identified_bins[j]);
         }
         std::vector<unsigned> ind(bch_length_, 0);
         size_t offset = xors.size();
@@ -222,9 +240,9 @@ class ParityBitmapSketch {
     }
 
     size_t header_len = (decode_header_len * remaining_num_groups_ +
-                         temp2.size() * bch_m_ + 7) /
-                        8;
-    header = (unsigned char *)malloc(header_len);
+        temp2.size() * bch_m_ + 7) /
+        8;
+    header = (unsigned char *) malloc(header_len);
     memset(header, 0, header_len);
     BitWriter writer(header);
     for (const auto &i : temp) writer.Write(i, decode_header_len);
@@ -325,7 +343,7 @@ class ParityBitmapSketch {
       if (bitmap[k]) minisketch_add_uint64(sketch, k);
     }
     std::string buffer(minisketch_serialized_size(sketch), ' ');
-    minisketch_serialize(sketch, (unsigned char *)&buffer[0]);
+    minisketch_serialize(sketch, (unsigned char *) &buffer[0]);
     minisketch_destroy(sketch);
     return buffer;
   }
@@ -334,7 +352,7 @@ class ParityBitmapSketch {
     return XXH32(&key, sizeof(key), seed);
   }
 
-  template <typename Iterator>
+  template<typename Iterator>
   void hash_partition(Iterator first, Iterator last) {
     size_t count = 0;
     for (auto it = first; it != last; ++it) {
