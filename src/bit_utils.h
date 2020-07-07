@@ -2,15 +2,27 @@
 #ifndef _BIT_UTILS_H_
 #define _BIT_UTILS_H_
 
+#include <cinttypes>
+
+namespace libpbs {
+namespace utils {
+namespace constants {
+constexpr std::size_t BITS_IN_ONE_BYTE = 8;
+}
+inline uint32_t UIntXMax(uint32_t bits) { return (1u << (bits - 1u)) - 1u; }
+inline std::size_t Bits2Bytes(std::size_t bits) {
+  return (bits + constants::BITS_IN_ONE_BYTE - 1) / constants::BITS_IN_ONE_BYTE;
+}
+
 class BitWriter {
   unsigned char state = 0;
   int offset = 0;
-  unsigned char* out;
+  unsigned char *out;
 
  public:
-  BitWriter(unsigned char* output) : out(output) {}
+  BitWriter(unsigned char *output) : out(output) {}
 
-  template<typename UInteger>
+  template <typename UInteger>
   inline void Write(UInteger val, int bits) {
     if (bits + offset >= 8) {
       state |= ((val & ((UInteger(1) << (8 - offset)) - 1)) << offset);
@@ -41,12 +53,12 @@ class BitWriter {
 class BitReader {
   unsigned char state = 0;
   int offset = 0;
-  const unsigned char* in;
+  const unsigned char *in;
 
  public:
-  BitReader(const unsigned char* input) : in(input) {}
+  BitReader(const unsigned char *input) : in(input) {}
 
-  template<typename UInteger>
+  template <typename UInteger>
   inline UInteger Read(int bits) {
     if (offset >= bits) {
       UInteger ret = state & ((1 << bits) - 1);
@@ -72,5 +84,7 @@ class BitReader {
     return val;
   }
 };
+}  // namespace utils
+}  // namespace libpbs
 
-#endif //BIT_UTILS_H_
+#endif  // BIT_UTILS_H_
