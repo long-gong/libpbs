@@ -3,15 +3,24 @@
 #define _BIT_UTILS_H_
 
 #include <cinttypes>
+#include <type_traits>
+#include <cmath>
 
 namespace libpbs {
 namespace utils {
 namespace constants {
 constexpr std::size_t BITS_IN_ONE_BYTE = 8;
 }
+
 inline uint32_t UIntXMax(uint32_t bits) { return (1u << (bits - 1u)) - 1u; }
 inline std::size_t Bits2Bytes(std::size_t bits) {
   return (bits + constants::BITS_IN_ONE_BYTE - 1) / constants::BITS_IN_ONE_BYTE;
+}
+
+template<typename T>
+inline uint64_t CeilLog2(T data) {
+  static_assert(std::is_scalar_v<T>, "T must be a scalar type");
+  return static_cast<uint64_t>(std::ceil(std::log2(data)));
 }
 
 class BitWriter {

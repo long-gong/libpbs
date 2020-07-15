@@ -66,32 +66,51 @@ TEST(PbsMessagesTest, DecodingMessage) {
 }
 
 TEST(PbsMessagesTest, DecodingHintMessage) {
-  PbsDecodingMessage message(12, 7, 3);
-  message.decoded_num_differences = {3, 2, -1};
-  message.decoded_differences = {1, 2, 3, 19, 43};
+  size_t num_groups = 215;
+  PbsDecodingHintMessage decoding_hint_message(num_groups);
 
-  PbsDecodingHintMessage decoding_hint_message(message);
-  decoding_hint_message.exception_i_flags = {0, 1, 0};
-  decoding_hint_message.exception_ii_counts = {1, 1, 0};
-  decoding_hint_message.exception_ii_bins = {2, 1};
+  std::vector<uint32_t> test_ids = {1, 9, 101};
+  for (uint32_t gid: test_ids) decoding_hint_message.addGroupId(gid);
 
   auto ss = decoding_hint_message.serializedSize();
   std::vector<uint8_t> buffer(ss, 0);
   decoding_hint_message.write(&buffer[0]);
   {
-    PbsDecodingHintMessage decoding_hint_message1(message);
+    PbsDecodingHintMessage decoding_hint_message1(num_groups);
     auto psz = decoding_hint_message1.parse(&buffer[0], buffer.size());
-
     EXPECT_EQ(buffer.size(), psz);
-
-    EXPECT_EQ(decoding_hint_message.exception_i_flags,
-              decoding_hint_message1.exception_i_flags);
-    EXPECT_EQ(decoding_hint_message.exception_ii_counts,
-              decoding_hint_message1.exception_ii_counts);
-    EXPECT_EQ(decoding_hint_message.exception_ii_bins,
-              decoding_hint_message1.exception_ii_bins);
+    EXPECT_EQ(decoding_hint_message.groups_with_exceptions,
+              test_ids);
   }
 }
+
+//TEST(PbsMessagesTest, DecodingHintMessage) {
+//  PbsDecodingMessage message(12, 7, 3);
+//  message.decoded_num_differences = {3, 2, -1};
+//  message.decoded_differences = {1, 2, 3, 19, 43};
+//
+//  PbsDecodingHintMessage decoding_hint_message(message);
+//  decoding_hint_message.exception_i_flags = {0, 1, 0};
+//  decoding_hint_message.exception_ii_counts = {1, 1, 0};
+//  decoding_hint_message.exception_ii_bins = {2, 1};
+//
+//  auto ss = decoding_hint_message.serializedSize();
+//  std::vector<uint8_t> buffer(ss, 0);
+//  decoding_hint_message.write(&buffer[0]);
+//  {
+//    PbsDecodingHintMessage decoding_hint_message1(message);
+//    auto psz = decoding_hint_message1.parse(&buffer[0], buffer.size());
+//
+//    EXPECT_EQ(buffer.size(), psz);
+//
+//    EXPECT_EQ(decoding_hint_message.exception_i_flags,
+//              decoding_hint_message1.exception_i_flags);
+//    EXPECT_EQ(decoding_hint_message.exception_ii_counts,
+//              decoding_hint_message1.exception_ii_counts);
+//    EXPECT_EQ(decoding_hint_message.exception_ii_bins,
+//              decoding_hint_message1.exception_ii_bins);
+//  }
+//}
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest();

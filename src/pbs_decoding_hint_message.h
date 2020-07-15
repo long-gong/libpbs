@@ -15,77 +15,46 @@ namespace libpbs {
  * It tells whether exceptions (exception I or II) happens in the corresponding
  * PbsDecodingMessage instance.
  *
- * Note that we can only tell whether exception I happens within a group/subset,
- * whereas we can tell in which specific bins do exception II happens.
+ * Note that there is no need for the hint of BCH decoding failure.
  *
  */
 class PbsDecodingHintMessage : public PbsMessage {
  public:
-  explicit PbsDecodingHintMessage(const PbsDecodingMessage& message)
+  explicit PbsDecodingHintMessage(size_t g)
       : PbsMessage(PbsMessageType::DECODING_HINT),
-        pbs_decoding_message(message),
-        exception_i_flags(message.num_groups, 0),
-        exception_ii_counts(message.num_groups, 0) {}
+        bits_each_id(utils::CeilLog2(g)), groups_with_exceptions() {}
   ~PbsDecodingHintMessage() override = default;
+  size_t bits_each_id;
+  std::vector<uint32_t> groups_with_exceptions;
 
-  // associated PbsDecodingMessage instance
-  const PbsDecodingMessage& pbs_decoding_message;
-  // flags for indicating whether exception I happens in each group
-  // ONLY two values are allowed (but we will not validate): 0 for "no",
-  // 1 for "yes"
-  std::vector<uint8_t> exception_i_flags;
-  // counters for counting how many bins have exception II in each group
-  std::vector<uint32_t> exception_ii_counts;
-  // indices of bins (in each group) in which exception II happens
-  std::vector<uint32_t> exception_ii_bins;
-
-  ssize_t parse(const uint8_t* from, size_t msg_sz) override {
+  ssize_t parse(const uint8_t *from, size_t msg_sz) override {
+    if (msg_sz == 0) return 0;
     utils::BitReader reader(from);
-    size_t count_sz = std::ceil(std::log2(pbs_decoding_message.capacity + 1));
-    size_t count_bins = 0;
-    // reader header
-    for (size_t g = 0; g < pbs_decoding_message.num_groups; ++g) {
-      exception_i_flags[g] = reader.Read<uint8_t>(1);
-      exception_ii_counts[g] = reader.Read<uint32_t>(count_sz);
-      count_bins += exception_ii_counts[g];
-    }
+    size_t count = msg_sz * 8 / bits_each_id;
 
-    exception_ii_bins.resize(count_bins, 0);
-    size_t total_bytes = serializedSize();
-    if (total_bytes > msg_sz) return -1;
+    groups_with_exceptions.resize(count, 0);
     // read body
-    for (auto& bi : exception_ii_bins)
-      bi = reader.Read<uint32_t>(pbs_decoding_message.field_sz);
-
-    return total_bytes;
+    for (auto &bi : groups_with_exceptions)
+      bi = reader.Read<uint32_t>(bits_each_id);
+    return msg_sz;
   }
 
-  ssize_t write(uint8_t* to) const override {
+  void addGroupId(uint32_t gid) {
+    groups_with_exceptions.push_back(gid);
+  }
+
+  ssize_t write(uint8_t *to) const override {
     utils::BitWriter writer(to);
-
-    size_t count_sz = std::ceil(std::log2(pbs_decoding_message.capacity + 1));
-    // write header
-    for (size_t g = 0; g < pbs_decoding_message.num_groups; ++g) {
-      writer.Write<uint8_t>(exception_i_flags[g], 1);
-      writer.Write<uint32_t>(exception_ii_counts[g], count_sz);
+    // write to buffer
+    for (uint32_t gid: groups_with_exceptions) {
+      writer.Write<uint32_t>(gid, bits_each_id);
     }
-
-    // write bin ids
-    for (uint32_t bi : exception_ii_bins)
-      writer.Write<uint32_t>(bi, pbs_decoding_message.field_sz);
     writer.Flush();
-
     return serializedSize();
   }
 
   [[nodiscard]] ssize_t serializedSize() const override {
-    size_t header_each =
-        std::ceil(std::log2(pbs_decoding_message.capacity + 1)) + 1;
-    auto header_sz = header_each * pbs_decoding_message.num_groups;
-    size_t body_sz = std::accumulate(exception_ii_counts.cbegin(),
-                                     exception_ii_counts.cend(), (size_t)0) *
-                     pbs_decoding_message.field_sz;
-    return utils::Bits2Bytes(header_sz + body_sz);
+    return utils::Bits2Bytes(bits_each_id * groups_with_exceptions.size());
   }
 };
 }  // end namespace libpbs
