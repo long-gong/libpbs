@@ -16,7 +16,7 @@ namespace libpbs {
  * @brief The PbsEncodingMessage class.
  *
  * A PBS encoding message is a collection of Parity Bitmap Sketches
- * each of which uses BCH codes to encode necessary information
+ * each of which uses BCH codes to doEncode_ necessary information
  * for the receiver to decode where his parity bitmaps (bitmaps
  * for his subsets/groups) are different from the sender's.
  *

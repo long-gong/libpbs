@@ -59,37 +59,38 @@ class PbsDecodingMessage : public PbsMessage {
 
   ~PbsDecodingMessage() override = default;
 
-  template <typename WritableIterator, typename ReadOnlyIterator>
+  template<typename WritableIterator, typename ReadOnlyIterator>
   void setWith(WritableIterator sketch_a_first, WritableIterator sketch_a_last,
                ReadOnlyIterator sketch_b_first) {
     static_assert(
         std::is_same_v<
             typename std::iterator_traits<WritableIterator>::value_type,
-            minisketch*>,
+            minisketch *>,
         "WritableIterator should have a value_type of minisketch*");
     static_assert(
         std::is_same_v<
             typename std::iterator_traits<ReadOnlyIterator>::value_type,
-            minisketch*>,
+            minisketch *>,
         "ReadOnlyIterator should have a value_type of minisketch*");
 
     size_t g = 0, offset = 0;
-    for (auto& [sketch_a_it, sketch_b_it] =
-             std::tie(sketch_a_first, sketch_b_first);
-         sketch_a_it != sketch_a_last; ++sketch_a_it, ++sketch_b_it) {
+    WritableIterator sketch_a_it = sketch_a_first;
+    ReadOnlyIterator sketch_b_it = sketch_b_first;
+    for (;sketch_a_it != sketch_a_last; ++sketch_a_it, ++sketch_b_it) {
       decoded_num_differences[g] =
           doDecoding(*sketch_a_it, *sketch_b_it, &decoded_differences[offset]);
       if (decoded_num_differences[g] > 0) offset += decoded_num_differences[g];
+      ++ g;
     }
     decoded_differences.resize(offset);
   }
 
-  ssize_t parse(const uint8_t* from, size_t msg_sz) override {
+  ssize_t parse(const uint8_t *from, size_t msg_sz) override {
     utils::BitReader reader(from);
 
     size_t count = 0;
     // read d part
-    for (auto& decode_each_d : decoded_num_differences) {
+    for (auto &decode_each_d : decoded_num_differences) {
       auto d = reader.Read<uint32_t>(sizeof_each_d);
       if (d == decoding_failure_flag)
         decode_each_d = -1;
@@ -104,24 +105,24 @@ class PbsDecodingMessage : public PbsMessage {
     if (total_bytes < msg_sz) return -1;
 
     // read difference parts
-    for (auto& diff : decoded_differences) {
+    for (auto &diff : decoded_differences) {
       diff = reader.Read<uint64_t>(field_sz);
     }
 
     return total_bytes;
   }
 
-  ssize_t write(uint8_t* to) const override {
+  ssize_t write(uint8_t *to) const override {
     utils::BitWriter writer(to);
     // write d part
-    for (const auto& decode_each_d : decoded_num_differences) {
+    for (const auto &decode_each_d : decoded_num_differences) {
       auto d = decode_each_d < 0 ? decoding_failure_flag
                                  : static_cast<uint32_t>(decode_each_d);
       writer.Write<uint32_t>(d, sizeof_each_d);
     }
 
     // write difference parts
-    for (const auto& decode_each_difference : decoded_differences) {
+    for (const auto &decode_each_difference : decoded_differences) {
       writer.Write<uint64_t>(decode_each_difference, field_sz);
     }
     // tell writer I am finished
@@ -137,8 +138,8 @@ class PbsDecodingMessage : public PbsMessage {
   }
 
  private:
-  inline ssize_t doDecoding(minisketch* sketch_a, const minisketch* sketch_b,
-                     uint64_t* difference_start) const {
+  inline ssize_t doDecoding(minisketch *sketch_a, const minisketch *sketch_b,
+                            uint64_t *difference_start) const {
     minisketch_merge(sketch_a, sketch_b);
     return minisketch_decode(sketch_a, capacity, difference_start);
   }

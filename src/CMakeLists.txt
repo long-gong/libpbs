@@ -73,9 +73,21 @@ target_link_libraries(test_pbs_messages
         minisketch
         GTest::GTest
         GTest::Main)
-
 add_test(NAME vtest
-         COMMAND valgrind --leak-check=yes --error-exitcode=1 $<TARGET_FILE:test_pbs_messages>)
+        COMMAND valgrind --leak-check=yes --error-exitcode=1 $<TARGET_FILE:test_pbs_messages>)
+
+add_executable(test_pbs "../test/test_pbs.cpp")
+target_include_directories(test_pbs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(test_pbs
+        minisketch
+        GTest::GTest
+        GTest::Main
+        Boost::serialization
+        Boost::filesystem
+        Eigen3::Eigen
+        fmt::fmt)
+
+
 
 add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp" ${proto_obj}  ${grpc_obj}
         ${proto_srcs}

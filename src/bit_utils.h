@@ -5,6 +5,7 @@
 #include <cinttypes>
 #include <type_traits>
 #include <cmath>
+#include <tsl/ordered_set.h>
 
 namespace libpbs {
 namespace utils {
@@ -21,6 +22,25 @@ template<typename T>
 inline uint64_t CeilLog2(T data) {
   static_assert(std::is_scalar_v<T>, "T must be a scalar type");
   return static_cast<uint64_t>(std::ceil(std::log2(data)));
+}
+
+template <typename T>
+inline std::vector<T> setDifference(const tsl::ordered_set<T>& sa, const tsl::ordered_set<T>& sb) {
+  std::vector<T> result;
+  for (const auto& item: sa) {
+    if (!sb.contains(item)) result.push_back(item);
+  }
+  for (const auto& item: sb) {
+    if (!sa.contains(item)) result.push_back(item);
+  }
+  return result;
+}
+
+template <typename T>
+inline void setDifference(std::vector<T>& sa, const std::vector<T>& sb)  {
+    tsl::ordered_set<T> s1(sa.begin(),sa.end());
+    tsl::ordered_set<T> s2(sb.cbegin(), sb.cend());
+    sa = setDifference(s1, s2);
 }
 
 class BitWriter {
