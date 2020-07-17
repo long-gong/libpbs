@@ -324,11 +324,11 @@ class ParityBitmapSketch {
   uint64_t parity_encoding_seed_;
 
   /* BCH related parameters */
-  size_t bch_m_;
+  size_t bch_m_{};
   // BCH block length (bch_n_ = 2^bch_m_ - 1)
-  size_t bch_n_;
+  size_t bch_n_{};
   // BCH error-correcting capacity
-  size_t bch_t_;
+  size_t bch_t_{};
 
   // good estimate for the cardinality of the set difference
   // or the exact cardinality of the set difference
