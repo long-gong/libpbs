@@ -8,6 +8,8 @@ service Estimation {
 
     rpc ReconcilePinSketch(PinSketchRequest) returns (PinSketchReply) {}
 
+    rpc ReconcileParityBitmapSketch(PbsRequest) returns (PbsReply) {}
+
     rpc Synchronize(SynchronizeMessage) returns (SynchronizeMessage) {}
 }
 
@@ -29,6 +31,24 @@ message PinSketchReply {
    repeated int32 missing_keys = 1;
    repeated KeyValue pushed_key_values = 2;
 }
+
+
+message PbsRequest {
+    string encoding_msg = 1;
+    string encoding_hint = 2;
+
+    repeated KeyValue pushed_key_values = 3;
+    repeated uint32 missing_keys = 4;
+}
+
+message PbsReply {
+    string decoding_msg = 1;
+    repeated uint32 xors = 2;
+    repeated uint32 checksum = 3;
+
+    repeated KeyValue pushed_key_values = 4;
+}
+
 
 message KeyValue {
  int32 key = 1;

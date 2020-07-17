@@ -309,6 +309,23 @@ class ParityBitmapSketch {
     return round_count_;
   }
 
+  // TODO: add support for parsing message from buffer
+  [[nodiscard]] size_t bchParameterM() const noexcept {
+    return bch_m_;
+  }
+
+  [[nodiscard]] size_t bchParameterT() const noexcept {
+    return bch_t_;
+  }
+
+  [[nodiscard]] size_t numberOfGroups() const noexcept  {
+    return num_groups_remaining_;
+  }
+
+  [[nodiscard]] size_t hint_max_range() const noexcept {
+    return hint_max_range_;
+  }
+
  private:
   // average number of differences (the elements that only one of the sets A, B has) in each group
   float avg_diffs_per_group_;
@@ -540,5 +557,6 @@ class ParityBitmapSketch {
     num_groups_remaining_ = groups_.size();
   }
 };
+
 } // end namespace libpbs
 #endif //PARITY_BITMAP_SKETCH_H_

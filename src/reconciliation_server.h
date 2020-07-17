@@ -12,10 +12,11 @@
 #include <string>
 #include <thread>
 
-#include "tow.h"
-#include "xxhash_wrapper.h"
+#include "pbs.h"
 #include "pinsketch.h"
 #include "reconciliation.grpc.pb.h"
+#include "tow.h"
+#include "xxhash_wrapper.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -30,6 +31,9 @@ using reconciliation::Estimation;
 using reconciliation::PinSketchReply;
 using reconciliation::PinSketchRequest;
 
+using reconciliation::PbsReply;
+using reconciliation::PbsRequest;
+
 using reconciliation::KeyValue;
 using reconciliation::SynchronizeMessage;
 
@@ -38,7 +42,6 @@ using reconciliation::SynchronizeMessage;
 // Logic and data behind the server's behavior.
 // template<typename Key=int, typename Value=std::string>
 class EstimationServiceImpl final : public Estimation::Service {
-
   Status Estimate(ServerContext *context, const EstimateRequest *request,
                   EstimateReply *reply) override {
     double d = 0.0, tmp;
@@ -46,7 +49,8 @@ class EstimationServiceImpl final : public Estimation::Service {
       if (_key_value_pairs == nullptr) {
         return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
       }
-      LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(), _key_value_pairs->cend());
+      LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(),
+                                  _key_value_pairs->cend());
     }
 
     for (size_t i = 0; i < _sketches.size(); ++i) {
@@ -89,12 +93,11 @@ class EstimationServiceImpl final : public Estimation::Service {
 
   Status ReconcilePinSketch(ServerContext *context,
                             const PinSketchRequest *request,
-                            PinSketchReply *response) {
-    if (_estimated_diff == -1 )
+                            PinSketchReply *response) override {
+    if (_estimated_diff == -1)
       return Status(StatusCode::UNAVAILABLE, "Please call Estimate() first");
     if (_key_value_pairs == nullptr)
       return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
-
 
     PinSketch ps(sizeof(Key) * BITS_IN_ONE_BYTE, _estimated_diff);
     ps.encode_key_value_pairs(_key_value_pairs->cbegin(),
@@ -118,6 +121,69 @@ class EstimationServiceImpl final : public Estimation::Service {
       }
     }
 
+    return Status::OK;
+  }
+
+  Status ReconcileParityBitmapSketch(ServerContext *context,
+                                     const PbsRequest *request,
+                                     PbsReply *response) override {
+    if (_estimated_diff == -1)
+      return Status(StatusCode::UNAVAILABLE, "Please call Estimate() first");
+    if (_key_value_pairs == nullptr)
+      return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
+
+    std::vector<uint64_t> xors, checksums;
+    std::shared_ptr<libpbs::PbsEncodingMessage> my_enc;
+    if (_pbs == nullptr) {
+      _pbs = std::make_unique<libpbs::ParityBitmapSketch>(_estimated_diff);
+      for (const auto &kv : *_key_value_pairs) {
+        _pbs->add(kv.first);
+      }
+      if (!request->encoding_hint().empty()) {
+        throw std::runtime_error(
+            "encoding hint in the first round should be empty!!");
+      }
+      auto [my_enc_tmp, dummy] = _pbs->encode();
+      my_enc = my_enc_tmp;
+    } else {
+      if (request->encoding_hint().empty())
+        throw std::runtime_error("encoding hint should not be empty!!");
+      libpbs::PbsEncodingHintMessage hint(_pbs->hint_max_range());
+      hint.parse((const uint8_t *)request->encoding_hint().c_str(),
+                 request->encoding_hint().size());
+      my_enc = _pbs->encodeWithHint(hint);
+    }
+
+    libpbs::PbsEncodingMessage other_enc(my_enc->field_sz, my_enc->capacity,
+                                         my_enc->num_groups);
+    other_enc.parse((const uint8_t *)request->encoding_msg().c_str(),
+                    request->encoding_msg().size());
+
+    auto decoding_msg = _pbs->decode(other_enc, xors, checksums);
+    auto ssz = decoding_msg->serializedSize();
+    auto buffer = response->mutable_decoding_msg()->append(ssz, 0);
+    decoding_msg->write((uint8_t *)&buffer[0]);
+    for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
+    for (auto checksum : checksums)
+      *(response->mutable_checksum()->Add()) = checksum;
+
+    if (!request->pushed_key_values().empty()) {
+      for (const auto &kv : request->pushed_key_values()) {
+        if (_key_value_pairs->contains(kv.key()))
+          return Status(StatusCode::ALREADY_EXISTS, "duplications");
+        _key_value_pairs->insert({kv.key(), kv.value()});
+      }
+    }
+
+    if (!request->missing_keys().empty()) {
+      for (auto k : request->missing_keys()) {
+        if (!_key_value_pairs->contains(k))
+          return Status(StatusCode::NOT_FOUND, "fake");
+        auto kv = response->mutable_pushed_key_values()->Add();
+        kv->set_key(k);
+        kv->set_value(_key_value_pairs->at(k));
+      }
+    }
 
     return Status::OK;
   }
@@ -129,17 +195,16 @@ class EstimationServiceImpl final : public Estimation::Service {
         _estimated_diff(-1),
         _key_value_pairs(nullptr) {}
 
-
   void set_key_value_pairs(
-      const std::shared_ptr<tsl::ordered_map<Key, Value>>& other) {
+      const std::shared_ptr<tsl::ordered_map<Key, Value>> &other) {
     _key_value_pairs = other;
   }
 
   void set_estimated_diff(size_t d) { _estimated_diff = d; }
 
-  ssize_t estimated_diff() const { return _estimated_diff; }
+  [[nodiscard]] ssize_t estimated_diff() const { return _estimated_diff; }
 
-  const tsl::ordered_map<Key, Value> *key_value_pairs() const {
+  [[nodiscard]] const tsl::ordered_map<Key, Value> *key_value_pairs() const {
     return _key_value_pairs.get();
   }
 
@@ -159,6 +224,8 @@ class EstimationServiceImpl final : public Estimation::Service {
 
   ssize_t _estimated_diff;
   std::shared_ptr<tsl::ordered_map<Key, Value>> _key_value_pairs;
+
+  std::unique_ptr<libpbs::ParityBitmapSketch> _pbs{};
 };
 
-#endif // RECONCILIATION_SERVER_H_
+#endif  // RECONCILIATION_SERVER_H_
