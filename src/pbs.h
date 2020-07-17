@@ -14,8 +14,9 @@
 #include <map>
 #include <memory>
 #include <utility>
-#include <xxh3.h>
+#include <stdexcept>
 
+#include <xxh3.h>
 #include <minisketch.h>
 
 #include "pbs_params.h"
@@ -207,7 +208,7 @@ class ParityBitmapSketch {
   std::shared_ptr<PbsDecodingMessage> decode(const PbsEncodingMessage &other,
                                              std::vector<key_t> &xors,
                                              std::vector<key_t> &checksums) {
-    if (role_ == PbsRole::Alice) std::logic_error("Alice can not do decode");
+    if (role_ == PbsRole::Alice) throw std::logic_error("Alice can not do decode");
     assert (other.num_groups == num_groups_remaining_);
     role_ = PbsRole::Bob;
     pbs_decoding_ = std::make_shared<PbsDecodingMessage>(bch_m_, bch_t_, num_groups_remaining_);
@@ -257,7 +258,7 @@ class ParityBitmapSketch {
     assert (msg.num_groups == num_groups_remaining_);
 
     role_ = PbsRole::Alice;
-    recovered_.push_back(std::vector<key_t>());
+    recovered_.emplace_back();
 
     groups_bch_failed_.clear();
     // handle BCH failure first (to make sure groups of Alice and Bob will
@@ -289,22 +290,22 @@ class ParityBitmapSketch {
   }
 
   // get elements reconciled in this round
-  const std::vector<key_t> &differencesLastRound() const {
+  [[nodiscard]] const std::vector<key_t> &differencesLastRound() const {
     return recovered_.back();
   }
 
   // get all reconciled elements
-  const std::vector<std::vector<key_t>> differencesAll() const {
+  [[nodiscard]] const std::vector<std::vector<key_t>>& differencesAll() const {
     return recovered_;
   }
 
   // name of this class
-  std::string name() const {
+  [[nodiscard]] std::string name() const {
     return "ParityBitMapSketch";
   }
 
   // number of rounds
-  size_t rounds() const noexcept {
+  [[nodiscard]] size_t rounds() const noexcept {
     return round_count_;
   }
 
@@ -371,7 +372,7 @@ class ParityBitmapSketch {
    *
    */
   void calcBchParams_() {
-    pbsutils::BestBchParam bch_param;
+    pbsutils::BestBchParam bch_param{};
     pbsutils::PbsParam::bestBchParam(num_diffs_, avg_diffs_per_group_,
                                      max_rounds_, num_groups_when_bch_fail_,
                                      target_success_prob_, bch_param);
@@ -387,7 +388,7 @@ class ParityBitmapSketch {
    * @param element       element to be checked
    * @return              group id
    */
-  inline uint64_t getGroupId_(uint64_t element) const {
+  [[nodiscard]] inline uint64_t getGroupId_(uint64_t element) const {
     return MY_HASH_FN(element, group_partition_seed_) % num_groups_;
   }
 
@@ -398,7 +399,7 @@ class ParityBitmapSketch {
    * @param element   element to be checked
    * @return          bin id
    */
-  inline uint64_t getBinId_(uint64_t element) const {
+  [[nodiscard]] inline uint64_t getBinId_(uint64_t element) const {
     /// Note that here we do not use the bin with id 0
     /// since minisketch now does not support 0
     /// Note also that the seed needs to be changed for each round
