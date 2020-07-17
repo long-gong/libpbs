@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "pbs_decoding_hint_message.h"
+#include "pbs_encoding_hint_message.h"
 #include "pbs_decoding_message.h"
 #include "pbs_encoding_message.h"
 
@@ -67,7 +67,7 @@ TEST(PbsMessagesTest, DecodingMessage) {
 
 TEST(PbsMessagesTest, DecodingHintMessage) {
   size_t num_groups = 215;
-  PbsDecodingHintMessage decoding_hint_message(num_groups);
+  PbsEncodingHintMessage decoding_hint_message(num_groups);
 
   std::vector<uint32_t> test_ids = {1, 9, 101};
   for (uint32_t gid: test_ids) decoding_hint_message.addGroupId(gid);
@@ -76,7 +76,7 @@ TEST(PbsMessagesTest, DecodingHintMessage) {
   std::vector<uint8_t> buffer(ss, 0);
   decoding_hint_message.write(&buffer[0]);
   {
-    PbsDecodingHintMessage decoding_hint_message1(num_groups);
+    PbsEncodingHintMessage decoding_hint_message1(num_groups);
     auto psz = decoding_hint_message1.parse(&buffer[0], buffer.size());
     EXPECT_EQ(buffer.size(), psz);
     EXPECT_EQ(decoding_hint_message.groups_with_exceptions,
@@ -89,7 +89,7 @@ TEST(PbsMessagesTest, DecodingHintMessage) {
 //  message.decoded_num_differences = {3, 2, -1};
 //  message.decoded_differences = {1, 2, 3, 19, 43};
 //
-//  PbsDecodingHintMessage decoding_hint_message(message);
+//  PbsEncodingHintMessage decoding_hint_message(message);
 //  decoding_hint_message.exception_i_flags = {0, 1, 0};
 //  decoding_hint_message.exception_ii_counts = {1, 1, 0};
 //  decoding_hint_message.exception_ii_bins = {2, 1};
@@ -98,7 +98,7 @@ TEST(PbsMessagesTest, DecodingHintMessage) {
 //  std::vector<uint8_t> buffer(ss, 0);
 //  decoding_hint_message.write(&buffer[0]);
 //  {
-//    PbsDecodingHintMessage decoding_hint_message1(message);
+//    PbsEncodingHintMessage decoding_hint_message1(message);
 //    auto psz = decoding_hint_message1.parse(&buffer[0], buffer.size());
 //
 //    EXPECT_EQ(buffer.size(), psz);

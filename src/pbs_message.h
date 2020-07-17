@@ -21,7 +21,7 @@ namespace libpbs {
 enum class PbsMessageType : uint8_t {
   ENCODING = 1,
   DECODING = 2,
-  DECODING_HINT = 3
+  ENCODING_HINT = 3
 };
 
 class PbsMessage {

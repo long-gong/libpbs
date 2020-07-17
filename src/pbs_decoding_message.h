@@ -1,3 +1,13 @@
+/**
+ * @file pbs_decoding_message.h
+ * @author Long Gong <long.github@gmail.com>
+ * @brief The PBS Decoding Message.
+ * @version 0.1
+ * @date 2020-07-06
+ *
+ * @copyright Copyright (c) 2020
+ *
+ */
 #ifndef _PBS_DECODING_MESSAGE_H_
 #define _PBS_DECODING_MESSAGE_H_
 
@@ -40,13 +50,25 @@ class PbsDecodingMessage : public PbsMessage {
   // capacity, how many differences (different bit positions between the two
   // bitmaps) can this resulting correctly pinpoint
   uint32_t capacity;
+  // number of groups
   size_t num_groups;
+  // size of each set difference
   uint32_t sizeof_each_d;
+  // number to indicate that BCH decoding failed
   uint32_t decoding_failure_flag;
 
+  // number of decoded elements ("bit errors")
   std::vector<ssize_t> decoded_num_differences;
+  // decoded elements ("bit error positions")
   std::vector<uint64_t> decoded_differences;
 
+  /**
+   * @brief Constructor
+   *
+   * @param m            2^m -1 is the block length of BCH codes
+   * @param t            error-correcting capacity of BCH codes
+   * @param g            number of groups
+   */
   PbsDecodingMessage(uint32_t m, uint32_t t, size_t g)
       : PbsMessage(PbsMessageType::DECODING),
         field_sz(m),
@@ -56,9 +78,17 @@ class PbsDecodingMessage : public PbsMessage {
         decoding_failure_flag(utils::UIntXMax(sizeof_each_d)),
         decoded_num_differences(g),
         decoded_differences(g * capacity) {}
-
   ~PbsDecodingMessage() override = default;
 
+  /**
+   * @brief Set this message.
+   *
+   * @tparam WritableIterator                 writable iterator type
+   * @tparam ReadOnlyIterator                 readonly iterator type
+   * @param sketch_a_first, sketch_a_last     range of the sketches from one host (the merged result will
+   *                                          be writen to)
+   * @param sketch_b_first                    the beginning of the sketch range from another host
+   */
   template<typename WritableIterator, typename ReadOnlyIterator>
   void setWith(WritableIterator sketch_a_first, WritableIterator sketch_a_last,
                ReadOnlyIterator sketch_b_first) {
@@ -76,15 +106,22 @@ class PbsDecodingMessage : public PbsMessage {
     size_t g = 0, offset = 0;
     WritableIterator sketch_a_it = sketch_a_first;
     ReadOnlyIterator sketch_b_it = sketch_b_first;
-    for (;sketch_a_it != sketch_a_last; ++sketch_a_it, ++sketch_b_it) {
+    for (; sketch_a_it != sketch_a_last; ++sketch_a_it, ++sketch_b_it) {
       decoded_num_differences[g] =
           doDecoding(*sketch_a_it, *sketch_b_it, &decoded_differences[offset]);
       if (decoded_num_differences[g] > 0) offset += decoded_num_differences[g];
-      ++ g;
+      ++g;
     }
     decoded_differences.resize(offset);
   }
 
+  /**
+   * @brief Parse from buffer.
+   *
+   * @param from            buffer to parse
+   * @param msg_sz          buffer size (in bytes)
+   * @return                sizes being parsed, returns -1 if failed
+   */
   ssize_t parse(const uint8_t *from, size_t msg_sz) override {
     utils::BitReader reader(from);
 
@@ -112,6 +149,12 @@ class PbsDecodingMessage : public PbsMessage {
     return total_bytes;
   }
 
+  /**
+   * @brief  Write to buffer.
+   *
+   * @param to    buffer to write
+   * @return      number of written bytes
+   */
   ssize_t write(uint8_t *to) const override {
     utils::BitWriter writer(to);
     // write d part
@@ -131,6 +174,11 @@ class PbsDecodingMessage : public PbsMessage {
     return serializedSize();
   }
 
+  /**
+   * @brief  Serialized size
+   *
+   * @return  serialized size (in bytes)
+   */
   [[nodiscard]] ssize_t serializedSize() const override {
     size_t total_bits =
         sizeof_each_d * num_groups + field_sz * decoded_differences.size();
@@ -138,6 +186,14 @@ class PbsDecodingMessage : public PbsMessage {
   }
 
  private:
+  /**
+   * @brief Do BCH decoding.
+   *
+   * @param sketch_a                 sketch for bitmap A
+   * @param sketch_b                 sketch for bitmap B
+   * @param difference_start         where to store the decoded elements
+   * @return                         number of decoded elements, returns -1 when failed
+   */
   inline ssize_t doDecoding(minisketch *sketch_a, const minisketch *sketch_b,
                             uint64_t *difference_start) const {
     minisketch_merge(sketch_a, sketch_b);

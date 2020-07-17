@@ -87,7 +87,7 @@ TEST(PbsParamsTest, best_param) {
   pbsutils::BestBchParam param{};
   auto ub = pbsutils::PbsParam::bestBchParam(d, delta, r, c, obj_prob, param);
 
-  EXPECT_EQ(8, param.n);
+  EXPECT_EQ(8, param.m);
   EXPECT_EQ(11, param.t);
   EXPECT_NEAR(0.009357799909271, ub, abs_err);
 }

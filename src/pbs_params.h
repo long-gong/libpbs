@@ -1,34 +1,71 @@
+/**
+ * @file pbs_params.h
+ * @author Long Gong <long.github@gmail.com>
+ * @brief The PBS parameter optimization module
+ * @note  This file is ONLY a "C++ translation" for the MATLAB codes provided
+ * @version 0.1
+ * @date 2020-07-15
+ *
+ * @copyright Copyright (c) 2020
+ *
+ */
 #ifndef PBS_PARAMS_H_
 #define PBS_PARAMS_H_
 
 #include <eigen3/Eigen/Dense>
 #include <stats.hpp>
+
 #include <vector>
 
 #include "cache_helper.h"
 
 namespace pbsutils {
+
+namespace {
 constexpr size_t MAX_BALLS = 200;
-constexpr size_t N_MIN = 6;
-constexpr size_t N_MAX = 14;
+constexpr size_t M_MIN = 6;
+constexpr size_t M_MAX = 14;
+} // end namespace
 
 // matrix type of double
 using Mat = Eigen::MatrixXd;
 
+/**
+ * @brief BestBchParam struct
+ *
+ *
+ */
 struct BestBchParam {
-  size_t n;
+  // n = 2^m - 1 is the block length for this BCH code
+  size_t m;
+  // error-correcting capacity of this BCH code
   size_t t;
 };
 
+/**
+ * @brief PbsParam class
+ *
+ */
 class PbsParam {
  public:
+  /**
+   * @brief Calculate the best BCH parameter (in terms of minimizing communication overhead) in PBS
+   *
+   * @param d                     cardinality of the set difference (either exact or an accurate estimate)
+   * @param delta                 average number of distinct elements per group
+   * @param r                     maximum number of rounds to achieve the target success probability
+   * @param c                     number of groups to be further partitioned when BCH decoding failed
+   * @param targetProb            target success probability for PBS to reconcile all distinct elements in `r` rounds
+   * @param bch_param             best parameter to be returned
+   * @return                      upper bound for the failure probability when using the best parameter
+   */
   static double bestBchParam(size_t d, double delta, size_t r, size_t c,
                              double targetProb, BestBchParam &bch_param) {
     double best_cost = std::numeric_limits<double>::max(), cost = 0;
-    size_t n = 1, t = 1;
+    size_t m = 1, t = 1;
     double failure_prob_ub = -1.0;
 
-    for (size_t i = N_MIN; i <= N_MAX; ++i) {
+    for (size_t i = M_MIN; i <= M_MAX; ++i) {
       auto t_min = i;
       auto t_max = std::min(
           MAX_BALLS, std::min((1lu << i) - 2lu, size_t(std::ceil(5 * delta))));
@@ -40,7 +77,7 @@ class PbsParam {
         cost = static_cast<double>(t_min) * i;
         if (cost < best_cost) {
           best_cost = cost;
-          n = i;
+          m = i;
           t = t_min;
           failure_prob_ub = 1 - p_min;
         }
@@ -65,18 +102,35 @@ class PbsParam {
         cost = static_cast<double>(t_tmp) * i;
         if (cost < best_cost) {
           best_cost = cost;
-          n = i;
+          m = i;
           t = t_tmp;
           failure_prob_ub = 1 - p;
         }
       }
     }
 
-    bch_param.n = n;
+    bch_param.m = m;
     bch_param.t = t;
     return failure_prob_ub;
   }
 
+  /**
+   * @brief Compute "times 2 bound" for the failure probability
+   *
+   * For more details regarding "time2 bound", please refer to Corollary 5.11 on
+   * Page 103 in the following book:
+   *
+   * Mitzenmacher, M. and Upfal, E., 2017. Probability and computing:
+   * Randomization and probabilistic techniques in algorithms and data analysis.
+   * Cambridge university press.
+   *
+   * @param mr_m2d        transition probability matrix for multi-round operations in PBS
+   * @param m             number of balls (distinct elements)
+   * @param n             number of bins
+   * @param t             error-correcting capacity
+   * @param r             maximum number of rounds to achieve the target success probability
+   * @return              "times 2 bound" for the failure probability
+   */
   static double computeFailureProbabilityBound(const Mat &mr_m2d, size_t m,
                                                size_t n, size_t t, size_t r) {
     double prob_fail_one_group = 0;
@@ -90,6 +144,24 @@ class PbsParam {
     return 2.0 * (1.0 - std::pow(1.0 - prob_fail_one_group, n));
   }
 
+  /**
+   * @brief "times 2 bound" for the failure probability
+   *
+   * For more details regarding "time2 bound", please refer to Corollary 5.11 on
+   * Page 103 in the following book:
+   *
+   * Mitzenmacher, M. and Upfal, E., 2017. Probability and computing:
+   * Randomization and probabilistic techniques in algorithms and data analysis.
+   * Cambridge university press.
+   *
+   * @param d             cardinality of the set difference
+   * @param delta         average number of distinct elements per group
+   * @param n             block length of BCH code
+   * @param r             maximum number of rounds
+   * @param t             error-correcting capacity of BCH code
+   * @param c             number of groups to further partiton when BCH decoding failed
+   * @return              "times 2 bound" for the failure probability
+   */
   static double failureProbabilityUB(size_t d, double delta, size_t n, size_t r,
                                      size_t t, size_t c) {
     auto g = d / delta;
@@ -115,12 +187,13 @@ class PbsParam {
     return 2.0 * (1.0 - std::pow(1.0 - prob_fail_one_group, g));
   }
   /**
+   * @brief Compute the transition probability for multi-round operations in PBS
    *
-   * @param m          Number of balls
-   * @param n          Number of bins
-   * @param t          Decoding capacity
-   * @param r          Number of rounds
-   * @return
+   * @param m          number of balls
+   * @param n          number of bins
+   * @param t          decoding capacity
+   * @param r          number of rounds
+   * @return           the transition probability
    */
   static Mat computeMultiRoundProbabilityMatrix(size_t m, size_t n, size_t t,
                                                 size_t r) {
@@ -155,13 +228,14 @@ class PbsParam {
 
     return mr_m2d_matlab;
   }
-  /// Compute transition probability matrix
+
   /**
+   * @brief Compute transition probability matrix
    *
-   * @param m             Number of balls
-   * @param n             Number of bins
-   * @param t             Decoding capacity
-   * @return
+   * @param m             number of balls
+   * @param n             number of bins
+   * @param t             error-correcting capacity
+   * @return              the transition probability matrix
    */
   static Mat computeTransitionProbabilityMatrix(size_t m, size_t n, size_t t) {
     Mat m2d = Mat::Zero(m + 1, m + 2);
@@ -177,17 +251,18 @@ class PbsParam {
       m2d(i, i + 1) = 1 - m2d.block(i, 1, 1, i).sum();
     return m2d;
   }
-  /// Compute probabilities of some specific balls-into-bins events
+
   /**
+   * @brief Compute probabilities of some specific balls-into-bins events
+   *
    * Computes the probability of each event (i,j,k): throwing i balls into
    * n bins results in that j bins are empty and (k - 1) bins contain exact one
    * ball.
    *
-   *  TRANSLATING FROM OUR MATLAB VERSION
    *
-   * @param m         Number of balls
-   * @param n         Number of bins
-   * @return          Probabilities of the event (i,j,k)
+   * @param m         number of balls
+   * @param n         number of bins
+   * @return          probability matrix (3D) of the event (i,j,k)
    */
   static std::vector<Mat> computeProbabilityMatrix3D(size_t m, size_t n) {
     assert(m < n);
@@ -199,16 +274,16 @@ class PbsParam {
           if (b == 1)
             m3d[x](a, b) =
                 m3d[x - 1](a, b + 1) * static_cast<double>(b) / n +
-                m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
+                    m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
           else if (b == m + 1)
             m3d[x](a, b) =
                 m3d[x - 1](a + 1, b - 1) * static_cast<double>(a + 1) / n +
-                m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
+                    m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
           else
             m3d[x](a, b) =
                 m3d[x - 1](a + 1, b - 1) * static_cast<double>(a + 1) / n +
-                m3d[x - 1](a, b + 1) * static_cast<double>(b) / n +
-                m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
+                    m3d[x - 1](a, b + 1) * static_cast<double>(b) / n +
+                    m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
         }
       }
     }

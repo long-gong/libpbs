@@ -21,14 +21,14 @@ set(grpc_hdrs "${CMAKE_CURRENT_BINARY_DIR}/reconciliation.grpc.pb.h")
 find_program(_PROTOBUF_PROTOC protoc)
 find_program(_GRPC_CPP_PLUGIN_EXECUTABLE grpc_cpp_plugin)
 add_custom_command(
-      OUTPUT "${proto_srcs}" "${proto_hdrs}" "${grpc_srcs}" "${grpc_hdrs}"
-      COMMAND ${_PROTOBUF_PROTOC}
-      ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
+        OUTPUT "${proto_srcs}" "${proto_hdrs}" "${grpc_srcs}" "${grpc_hdrs}"
+        COMMAND ${_PROTOBUF_PROTOC}
+        ARGS --grpc_out "${CMAKE_CURRENT_BINARY_DIR}"
         --cpp_out "${CMAKE_CURRENT_BINARY_DIR}"
         -I "${proto_path}"
         --plugin=protoc-gen-grpc="${_GRPC_CPP_PLUGIN_EXECUTABLE}"
         "${proto_file}"
-      DEPENDS "${proto_file}")
+        DEPENDS "${proto_file}")
 
 # Include generated *.pb.h files
 include_directories("${CMAKE_CURRENT_BINARY_DIR}")
@@ -40,7 +40,7 @@ add_library(grpc_obj OBJECT IMPORTED grpc_srcs)
 SET(CMAKE_EXE_LINKER_FLAGS
         "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,${THIRD_PARTY}/lib")
 
-add_executable(server "reconciliation_server.cpp" ${proto_obj}  ${grpc_obj}
+add_executable(server "reconciliation_server.cpp" ${proto_obj} ${grpc_obj}
         ${proto_srcs}
         ${grpc_srcs})
 message("${GRPCPP_INCLUDE_DIRS} | ${GRPCPP_LIBRARIES}")
@@ -53,7 +53,7 @@ target_link_libraries(server
         xxhash
         minisketch)
 
-add_executable(client "reconciliation_client.cpp" ${proto_obj}  ${grpc_obj}
+add_executable(client "reconciliation_client.cpp" ${proto_obj} ${grpc_obj}
         ${proto_srcs}
         ${grpc_srcs})
 target_include_directories(client
@@ -77,6 +77,9 @@ add_test(NAME vtest
         COMMAND valgrind --leak-check=yes --error-exitcode=1 $<TARGET_FILE:test_pbs_messages>)
 
 add_executable(test_pbs "../test/test_pbs.cpp")
+#if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+#    target_compile_definitions(test_pbs PRIVATE -DDEBUG_PBS)
+#endif ()
 target_include_directories(test_pbs PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(test_pbs
         minisketch
@@ -88,8 +91,7 @@ target_link_libraries(test_pbs
         fmt::fmt)
 
 
-
-add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp" ${proto_obj}  ${grpc_obj}
+add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp" ${proto_obj} ${grpc_obj}
         ${proto_srcs}
         ${grpc_srcs})
 target_include_directories(test_reconciliation_services

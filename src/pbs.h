@@ -1,385 +1,543 @@
-#ifndef PBS_H_
-#define PBS_H_
+/**
+ * @file pbs.h
+ * @author Long Gong <long.github@gmail.com>
+ * @brief Parity Bitmap Schetch for reconciliation
+ * @version 0.1
+ * @date 2020-07-15
+ *
+ * @copyright Copyright (c) 2020
+ */
+#ifndef PARITY_BITMAP_SKETCH_H_
+#define PARITY_BITMAP_SKETCH_H_
 
-/// It seems some headers were conflicted with boost::dynamic_bitset (Please do
-/// not move its position)
-#include <boost/dynamic_bitset.hpp>
-#include <minisketch.h>
+#include <vector>
+#include <map>
+#include <memory>
+#include <utility>
 #include <xxh3.h>
 
-#include <cmath>
-#include <random>
-#include <string>
-#include <vector>
+#include <minisketch.h>
 
-#include "bit_utils.h"
 #include "pbs_params.h"
+#include "pbs_encoding_message.h"
+#include "pbs_decoding_message.h"
+#include "pbs_encoding_hint_message.h"
 
+/**
+ * @brief The macro for hash functions
+ */
+#define MY_HASH_FN(key, seed) XXH3_64bits_withSeed(&key, sizeof(key), seed)
+
+namespace libpbs {
 namespace {
+/**
+ * @brief The constants
+ */
 constexpr unsigned DEFAULT_MAX_ROUNDS = 3;
 constexpr float DEFAULT_AVG_DIFFS_PER_GROUP = 5;
 constexpr unsigned DEFAULT_NUM_GROUPS_WHEN_BCH_FAIL = 3;
 constexpr double DEFAULT_TARGET_SUCCESS_PROB = 0.99;
 
-const unsigned DEFAULT_SEED_SEED = 142857;
-const unsigned SEED_SALT = 1;
+constexpr uint64_t DEFAULT_SEED_G = 0x6d496e536b65LU;
+constexpr uint64_t SEED_OFFSET = 142857;
+constexpr uint64_t BCH_FAILURE_PARTITION_SEED = 0x5A8923ALU;
 
-}  // namespace
+enum class PbsRole {
+  Alice,
+  Bob,
+  Undetermined
+};
+} // namespace
 
-using BitMap = boost::dynamic_bitset<>;
-template<typename KeyType>
+
+using key_t = uint64_t;
+using bitmap_t = std::vector<uint8_t>;
+
+/**
+ * @brief ParityBitmapSketch class
+ *
+ */
 class ParityBitmapSketch {
  public:
-  ParityBitmapSketch(
-      size_t num_diffs,
-      double target_success_prob = DEFAULT_TARGET_SUCCESS_PROB,
-      unsigned max_rounds = DEFAULT_MAX_ROUNDS,
-      float avg_diffs_per_group = DEFAULT_AVG_DIFFS_PER_GROUP,
-      unsigned num_groups_when_bch_fail = DEFAULT_NUM_GROUPS_WHEN_BCH_FAIL)
-      : num_diffs_(num_diffs),
-        max_rounds_(max_rounds),
-        avg_diffs_per_group_(avg_diffs_per_group),
-        num_groups_when_bch_fail_(num_groups_when_bch_fail),
-        current_round_(0),
-        remaining_num_groups_(
-            std::ceil((double) num_diffs / avg_diffs_per_group_)),
-        initial_num_groups_(remaining_num_groups_),
-        target_success_prob_(target_success_prob),
-        bch_m_(0),
-        bch_length_(0),
-        bch_capacity_(0),
-        seed_pool_{},
-        groups_(remaining_num_groups_),
-        xor_(remaining_num_groups_),
-        bitmaps_(remaining_num_groups_),
-        group_ids_(remaining_num_groups_) {
-    calc_bch_params();
-    for (auto &bins : xor_) bins.resize(bch_length_, 0);
-    for (auto &bitmap : bitmaps_) bitmap.resize(bch_length_);
+  /**
+   * @brief Constructor
+   *
+   *
+   * @param num_diffs                     number of distinct elements (an accurate estimate or exact)
+   * @param avg_diffs_per_group           average number of distinct elements per group
+   * @param target_success_prob           target success probability (within `max_rounds`)
+   * @param max_rounds                    maximum number of rounds (for achieving the target success probability)
+   * @param num_groups_when_bch_fail      number of sub-groups to be further split when BCH decoding failed
+   * @param seed                          random seed
+   */
+  ParityBitmapSketch(uint32_t num_diffs,
+                     float avg_diffs_per_group = DEFAULT_AVG_DIFFS_PER_GROUP,
+                     double target_success_prob = DEFAULT_TARGET_SUCCESS_PROB,
+                     unsigned max_rounds = DEFAULT_MAX_ROUNDS,
+                     unsigned num_groups_when_bch_fail = DEFAULT_NUM_GROUPS_WHEN_BCH_FAIL,
+                     uint64_t seed = DEFAULT_SEED_G) :
+      avg_diffs_per_group_(avg_diffs_per_group),
+      target_success_prob_(target_success_prob),
+      max_rounds_(max_rounds),
+      num_groups_when_bch_fail_(num_groups_when_bch_fail),
+      group_partition_seed_(seed),
+      parity_encoding_seed_(seed + SEED_OFFSET),
+      num_diffs_(num_diffs),
+      num_groups_(static_cast<std::size_t>(std::ceil((float) num_diffs / avg_diffs_per_group))),
+      num_groups_remaining_(num_groups_),
+      round_count_(0),
+      role_(PbsRole::Undetermined),
+      groups_(num_groups_),
+      to_original_group_id_(num_groups_),
+      pbs_encoding_(nullptr),
+      pbs_decoding_(nullptr),
+      hint_max_range_(num_groups_),
+      checksums_(num_groups_, 0) {
+    calcBchParams_();
+    xors_.resize(num_groups_ * bch_n_, 0);
+    for (size_t gid = 0; gid < num_groups_; ++gid) to_original_group_id_[gid] = gid;
   }
 
-  std::string name() const { return "PBS"; }
-  unsigned current_round() const { return current_round_; }
-  unsigned avg_diffs_per_group() const { return avg_diffs_per_group_; }
-  unsigned num_groups_when_bch_fail() const {
-    return num_groups_when_bch_fail_;
+  /**
+   * @brief  Add a single element
+   *
+   * Please add all elements before calling encoding.
+   *
+   * @param element   element to be added
+   */
+  void add(uint64_t element) {
+    auto gid = getGroupId_(element);
+    groups_[gid].push_back(element);
   }
-  unsigned remaining_num_groups() const { return remaining_num_groups_; }
-  size_t num_diffs() const { return num_diffs_; }
 
+  /**
+   * @brief Batch adding elements
+   *
+   * @tparam Iterator
+   * @param first, last    	the range of elements to add
+   */
   template<typename Iterator>
-  std::vector<std::string> encode(Iterator first, Iterator last) {
-    hash_partition(first, last);
-    return serialization();
+  void add(Iterator first, Iterator last) {
+    for (auto it = first; it != last; ++it) add(static_cast<uint64_t>(*it));
   }
 
-  std::vector<std::string> serialization() {
-    std::vector<std::string> buffers;
-    buffers.reserve(remaining_num_groups_);
-    for (size_t g = 0; g < remaining_num_groups_; ++g)
-      buffers.push_back(encode_single_group(g));
-    return buffers;
+  /**
+   * @brief Encoding
+   *
+   * @return    a pair of PBS encoding message and PBS decoding hint message (could be null)
+   */
+  std::pair<std::shared_ptr<PbsEncodingMessage>, std::shared_ptr<PbsEncodingHintMessage>> encode() {
+    std::shared_ptr<PbsEncodingHintMessage> hint(nullptr);
+    pbs_encoding_ = std::make_shared<PbsEncodingMessage>(bch_m_, bch_t_, num_groups_remaining_);
+    for (size_t gid = 0; gid < num_groups_remaining_; ++gid) doEncode_(gid, pbs_encoding_->getSketch(gid));
+
+#ifdef DEBUG_PBS
+    if (!groups_.front().empty()) {
+      for (size_t i = 0;i < groups_.size();++ i)
+        if (bch_t_ < groups_[i].size())
+        printf("G#%lu: group size %lu | t = %zu\n", i, groups_[i].size(), bch_t_);
+    }
+#endif
+
+    if (!groups_exp_I_or_II_.empty()) {
+      hint = std::make_shared<PbsEncodingHintMessage>(hint_max_range_);
+      for (size_t gid: groups_exp_I_or_II_)
+        hint->addGroupId(gid);
+      groups_exp_I_or_II_.clear();
+    }
+    return {pbs_encoding_, hint};
   }
 
+  /**
+   * @brief Encoding with hint (needed when handling exceptions)
+   *
+   * @param msg       PBS decoding hint message
+   * @return          a shared pointer to a PBS encoding message
+   */
+  std::shared_ptr<PbsEncodingMessage> encodeWithHint(const PbsEncodingHintMessage &msg) {
+    encodeWithHint(msg.groups_with_exceptions.begin(), msg.groups_with_exceptions.end());
+  }
+
+  /**
+   * @brief Encoding with hint (needed when handling exceptions)
+   *
+   * This function should be used when you receive a PBS Decoding hint message
+   *
+   * @tparam Iterator
+   * @param first, last        the range of groups to doEncode_
+   * @return                   a shared pointer to a PBS encoding message
+   */
   template<typename Iterator>
-  bool decode_from_xor(unsigned char *header, Iterator xor_first,
-                       Iterator xor_last, std::vector<KeyType> &reconciled, unsigned char *exception_indicator) {
-    const size_t decode_header_len = std::ceil(std::log2(bch_capacity_ + 2));
-    const uint32_t bch_failed_flag = (1u << decode_header_len) - 1u;
+  std::shared_ptr<PbsEncodingMessage> encodeWithHint(Iterator first, Iterator last) {
+    if (role_ != PbsRole::Bob) throw std::logic_error("Only Bob do doEncode_ with hint");
+    size_t num_groups_I_or_II = std::distance(first, last);
+#ifdef DEBUG_PBS
+    printf("I or II: %lu, BCH: %lu\n", num_groups_I_or_II, groups_bch_failed_.size());
+#endif
+    auto num_groups = num_groups_I_or_II + groups_bch_failed_.size() * num_groups_when_bch_fail_;
+    pbs_encoding_ = std::make_shared<PbsEncodingMessage>(bch_m_, bch_t_, num_groups);
 
-    std::vector<uint32_t> temp, temp2;
-    BitReader reader(header);
-    size_t i = 0, num_decoded = 0, bin_loc_offset = 0, xor_offset = 0;
+    xors_.resize(xors_.size() + num_groups_I_or_II * bch_n_, 0u);
+    checksums_.resize(checksums_.size() + num_groups_I_or_II, 0u);
 
-    std::vector<size_t> bch_failed_groups;
-    for (; i < remaining_num_groups_; ++i) {
-      temp.push_back(reader.Read<uint32_t>(decode_header_len));
-      if (temp.back() != bch_failed_flag) {
-        num_decoded += temp.back();
-      } else {
-        bch_failed_groups.push_back(i);
-      }
+    for (auto it = first; it != last; ++it) {
+      auto old_gid = *it;
+      groups_.push_back(std::move(groups_[old_gid]));
+      to_original_group_id_.push_back(to_original_group_id_[old_gid]);
     }
+    groups_bch_failed_.clear();
+    // remove all successful groups (and its associated all info)
+    removeCompletedGroups_();
 
-    exception_indicator = (unsigned char *) malloc((num_decoded + remaining_num_groups_ * 2 + 7) / 8);
+    size_t i = 0;
+    for (size_t gid = 0;gid < num_groups_remaining_;++ gid)
+      doEncode_(gid, pbs_encoding_->getSketch(i++));
 
-    BitWriter bit_writer(exception_indicator);
-
-    for (size_t j = 0; j < num_decoded; ++j)
-      temp2.push_back(reader.Read<uint32_t>(bch_capacity_));
-
-    {
-      i = 0;
-
-      for (; i < remaining_num_groups_; ++i) {
-        if (temp[i] != bch_failed_flag) {
-          bit_writer.Write(0, 1); // bch succeeded
-          ssize_t p = temp[i];
-          vector<uint> ind(bch_length_, 0);
-          for (int k = 0; k < p; ++k) {
-            ind[temp2[k + bin_loc_offset]] = k + 1;
-          }
-          for (size_t bi = 1; bi < bch_length_; ++bi) {
-            xor_first[xor_offset + ind[bi]] ^= xor_[i][bi];
-          }
-          bin_loc_offset += p;
-
-          if (xor_first[xor_offset] != 0) {
-            bit_writer.Write(1, 1); // exception I
-            size_t old_size = groups_.size();
-            groups_.resize(old_size + 1);
-            group_ids_.resize(old_size + 1);
-            for (size_t k = 0; k < groups_[i].size(); ++k) {
-              size_t loc = get_loc(i, k);
-              if (!ind[loc]) {
-                groups_[old_size].push_back(groups_[i][k]);
-              }
-            }
-            group_ids_[old_size] = group_ids_[i];
-          } else {
-            bit_writer.Write(0, 1); // exception I
-          }
-
-          for (int k = 1; k <= p; ++k) {
-            auto possible_diff = xor_first[xor_offset + k];
-            if (possible_diff) {
-              size_t group_id = get_group_id(possible_diff);
-              size_t bin_index = get_bin_index(possible_diff);
-              if (bin_index == temp2[k - 1 + bin_loc_offset] && group_id ==
-                  group_ids_[i]) {
-                bit_writer.Write(0, 1);
-                reconciled.push_back(possible_diff);
-                size_t old_size = groups_.size();
-                groups_.resize(old_size + 1);
-                group_ids_.resize(old_size + 1);
-                for (size_t q = 0; q < groups_[i].size(); ++q) {
-                  size_t loc = get_loc(i, q);
-                  if (loc == temp2[k - 1 + bin_loc_offset])
-                    groups_[old_size].push_back(groups_[i][q]);
-                }
-                group_ids_[old_size] = group_ids_[i];
-              } else {
-                bit_writer.Write(1, 1);
-              }
-            }
-          }
-
-          xor_offset += p + 1;
-        } else {
-          bit_writer.Write(1, 1);
-        }
-      }
-    }
-
-    bit_writer.Flush();
-
-    for (auto j : bch_failed_groups) {
-      size_t old_size = groups_.size();
-      groups_.resize(old_size + num_groups_when_bch_fail_);
-
-      for (size_t k = 0; k < groups_[j].size(); ++k) {
-        size_t index = hash(groups_[i][k], group_partition_seed()) %
-            num_groups_when_bch_fail_;
-        groups_[old_size + index].push_back(groups_[j][k]);
-      }
-    }
-
-    groups_.erase(groups_.begin(), groups_.begin() + remaining_num_groups_);
-    group_ids_.erase(group_ids_.begin(),
-                     group_ids_.begin() + remaining_num_groups_);
-    remaining_num_groups_ = groups_.size();
-
-    seed_pool_.next();
-    ++current_round_;
-
-    if (remaining_num_groups_ > 0) {
-      xor_.resize(remaining_num_groups_);
-      for (auto &group_xors : xor_) group_xors.reset();
-    } else {
-      xor_.clear();
-      return true;
-    }
-
-    return false;
+    return pbs_encoding_;
   }
 
-  template<typename Iterator, typename Iterator2>
-  void decode(Iterator other_first, Iterator other_last, Iterator2 first,
-              Iterator2 last, unsigned char *header,
-              std::vector<KeyType> &xors) {
-    const size_t decode_header_len = std::ceil(std::log2(bch_capacity_ + 2));
-    const uint32_t bch_failed_flag = (1u << decode_header_len) - 1u;
-
+  /**
+   * @brief  Decoding
+   *
+   * @param other                PBS encoding message received from the other host
+   * @param xors                 XORs to be sent to the other host
+   * @param checksums            checksums to be sent to the other host
+   * @return                     a shared pointer to PBS decoding message
+   */
+  std::shared_ptr<PbsDecodingMessage> decode(const PbsEncodingMessage &other,
+                                             std::vector<key_t> &xors,
+                                             std::vector<key_t> &checksums) {
+    if (role_ == PbsRole::Alice) std::logic_error("Alice can not do decode");
+    assert (other.num_groups == num_groups_remaining_);
+    role_ = PbsRole::Bob;
+    pbs_decoding_ = std::make_shared<PbsDecodingMessage>(bch_m_, bch_t_, num_groups_remaining_);
+    pbs_decoding_->setWith(pbs_encoding_->getSketches().begin(),
+                           pbs_encoding_->getSketches().end(),
+                           other.getSketches().cbegin());
+    size_t offset = 0, gid = 0;
     xors.clear();
-
-    hash_partition(first, last);
-    std::vector<uint32_t> temp, temp2;
-    auto it = other_first;
-    for (size_t g = 0, bi = 0; g < remaining_num_groups_ && it != other_last;
-         ++g, bi += decode_header_len) {
-      std::vector<uint64_t> identified_bins;
-      auto p =
-          decode_single_group((unsigned char *) &((*it)[0]), g, identified_bins);
-      if (p < 0) {
-        temp.push_back(bch_failed_flag);
+    checksums.clear();
+    for (const auto p: pbs_decoding_->decoded_num_differences) {
+      if (p >= 0) {
+        for (size_t k = 0; k < p; ++k) {
+          auto bid = pbs_decoding_->decoded_differences[offset + k];
+          xors.push_back(xors_[gid * bch_n_ + bid]);
+        }
+        offset += p;
+        checksums.push_back(checksums_[gid]);
       } else {
-        temp.push_back((uint32_t) p);
-        for (ssize_t j = 0; j < p; ++j) {
-          temp2.push_back((uint32_t) identified_bins[j]);
-        }
-        std::vector<unsigned> ind(bch_length_, 0);
-        size_t offset = xors.size();
-        xors.resize(offset + p + 1, 0);
-        for (int k = 0; k < p; ++k) {
-          ind[identified_bins[k]] = k + 1;
-        }
-        for (size_t xi = 1; xi < bch_length_; ++xi) {
-          xors[offset + ind[xi]] ^= xor_[g][xi];
-        }
+        // BCH decoding failed
+        groups_bch_failed_.push_back(gid);
+        threeWaySplit_(gid);
       }
+      gid++;
     }
 
-    size_t header_len = (decode_header_len * remaining_num_groups_ +
-        temp2.size() * bch_m_ + 7) /
-        8;
-    header = (unsigned char *) malloc(header_len);
-    memset(header, 0, header_len);
-    BitWriter writer(header);
-    for (const auto &i : temp) writer.Write(i, decode_header_len);
-    for (const auto &i : temp2) writer.Write(i, bch_m_);
-    writer.Flush();
+    // update number rounds
+    ++round_count_;
+    return pbs_decoding_;
+  }
+
+  /**
+   * @brief Check whether there are exceptions in all groups
+   *
+   * For more details, please refer to our paper.
+   *
+   * @param msg             PBS decoding message instance
+   * @param xors            XORs associated with the PBS decoding message
+   * @param checksums       checksums associated with the PBS decoding message
+   * @return                whether there is no exceptions (true -- no exception)
+   */
+  bool decodeCheck(
+      const PbsDecodingMessage &msg,
+      const std::vector<key_t> &xors,
+      const std::vector<key_t> &checksums
+  ) {
+    if (role_ == PbsRole::Bob) throw std::logic_error("Bob can not do decode check");
+    assert (msg.num_groups == num_groups_remaining_);
+
+    role_ = PbsRole::Alice;
+    recovered_.push_back(std::vector<key_t>());
+
+    groups_bch_failed_.clear();
+    // handle BCH failure first (to make sure groups of Alice and Bob will
+    // have the same order)
+    for (size_t gid = 0; gid < msg.num_groups; ++gid) {
+      auto p = msg.decoded_num_differences[gid];
+      if (p < 0) {
+        groups_bch_failed_.push_back(gid);
+        threeWaySplit_(gid);
+      }
+    }
+    groups_exp_I_or_II_.clear();
+    size_t offset = 0, cid = 0;
+    for (size_t gid = 0; gid < msg.num_groups; ++gid) {
+      auto p = msg.decoded_num_differences[gid];
+      // Note that checksum is available ONLY when p >= 0
+      if (p == 0) {
+        doDecodeCheck_(gid, p, nullptr, nullptr, checksums[cid++]);
+      } else if (p > 0) {
+        doDecodeCheck_(gid, p, &(msg.decoded_differences[offset]), &xors[offset], checksums[cid++]);
+        offset += p;
+      }
+    }
+    // remove all groups in which reconciliation has completed
+    removeCompletedGroups_();
+    // update number rounds
+    ++round_count_;
+    return (num_groups_remaining_ == 0);
+  }
+
+  // get elements reconciled in this round
+  const std::vector<key_t> &differencesLastRound() const {
+    return recovered_.back();
+  }
+
+  // get all reconciled elements
+  const std::vector<std::vector<key_t>> differencesAll() const {
+    return recovered_;
+  }
+
+  // name of this class
+  std::string name() const {
+    return "ParityBitMapSketch";
+  }
+
+  // number of rounds
+  size_t rounds() const noexcept {
+    return round_count_;
   }
 
  private:
-  struct SeedPool {
-    SeedPool() : g(DEFAULT_SEED_SEED), distrib(1), current_seed(0) { next(); }
-    std::mt19937_64 g;
-    std::uniform_int_distribution<uint32_t> distrib;
-    uint32_t current_seed;
-    uint32_t previous_seed;
-    uint32_t next() {
-      previous_seed = current_seed;
-      current_seed = distrib(g);
-      return current_seed;
-    }
-    uint32_t current() { return current_seed; }
-    uint32_t previous() { return previous_seed; }
-  };
+  // average number of differences (the elements that only one of the sets A, B has) in each group
+  float avg_diffs_per_group_;
+  // target success probability within `max_rounds_`
+  double target_success_prob_;
+  // target upper bound for the number of rounds to achieve the target success probability
+  unsigned max_rounds_;
+  // how many number of sub-groups to use when BCH docoding failed in a group
+  unsigned num_groups_when_bch_fail_;
 
-  unsigned bin_partition_seed() { return seed_pool_.current() + SEED_SALT; }
+  // seed for group partition
+  uint64_t group_partition_seed_;
+  // seed for parity bitmap encoding
+  uint64_t parity_encoding_seed_;
 
-  unsigned get_bin_index(KeyType elm) {
-    unsigned seed = bin_partition_seed();
-    return hash(elm, seed) % (bch_length_ - 1) + 1;
-  }
+  /* BCH related parameters */
+  size_t bch_m_;
+  // BCH block length (bch_n_ = 2^bch_m_ - 1)
+  size_t bch_n_;
+  // BCH error-correcting capacity
+  size_t bch_t_;
 
-  unsigned get_group_id(KeyType elm) {
-    unsigned seed = group_partition_seed();
-    return hash(elm, seed) % initial_num_groups_;
-  }
+  // good estimate for the cardinality of the set difference
+  // or the exact cardinality of the set difference
+  size_t num_diffs_;
+  // number of groups in the first round
+  size_t num_groups_;
+  // number of groups in current round
+  size_t num_groups_remaining_;
 
-  unsigned group_partition_seed() { return seed_pool_.current(); }
+  // current number of rounds
+  uint32_t round_count_;
+  // role (Alice or Bob)
+  PbsRole role_;
 
-  void calc_bch_params() {
+  // element groups
+  std::vector<std::vector<key_t >> groups_;
+  // map new group id to old group id
+  std::vector<size_t> to_original_group_id_;
+
+  /* PBS messages */
+  std::shared_ptr<PbsEncodingMessage> pbs_encoding_;
+  std::shared_ptr<PbsDecodingMessage> pbs_decoding_;
+  // for PBS encoding hint message
+  size_t hint_max_range_;
+
+  // XOR of all elements in each bin
+  std::vector<key_t> xors_;
+  // checksum (XOR of all elements) for a group
+  std::vector<key_t> checksums_;
+
+  // groups where exceptions happened
+  std::vector<size_t> groups_exp_I_or_II_;
+  std::vector<size_t> groups_bch_failed_;
+
+  // recovered elements
+  std::vector<std::vector<key_t>> recovered_;
+
+  /**
+   * @brief Calculate the near-optimal BCH parameters for PBS
+   *
+   */
+  void calcBchParams_() {
     pbsutils::BestBchParam bch_param;
     pbsutils::PbsParam::bestBchParam(num_diffs_, avg_diffs_per_group_,
                                      max_rounds_, num_groups_when_bch_fail_,
                                      target_success_prob_, bch_param);
-    bch_m_ = bch_param.n;
-    bch_length_ = (1u << bch_param.n) - 1;
-    bch_capacity_ = bch_param.t;
+    // TODO: release caches
+    bch_m_ = bch_param.m;
+    bch_n_ = (1u << bch_param.m) - 1;
+    bch_t_ = bch_param.t;
   }
 
-  size_t get_loc(size_t i, size_t offset) {
-    return get_bin_index(groups_[i][offset]);
+  /**
+   * @brief Get which group `element` is partitioned to
+   *
+   * @param element       element to be checked
+   * @return              group id
+   */
+  inline uint64_t getGroupId_(uint64_t element) const {
+    return MY_HASH_FN(element, group_partition_seed_) % num_groups_;
   }
 
-  ssize_t decode_single_group(unsigned char *other, unsigned gid,
-                              std::vector<uint64_t> &differences) {
-    size_t group_size = groups_[gid].size();
+  /**
+   * @brief Get which bin should `element` be located
+   *
+   *
+   * @param element   element to be checked
+   * @return          bin id
+   */
+  inline uint64_t getBinId_(uint64_t element) const {
+    /// Note that here we do not use the bin with id 0
+    /// since minisketch now does not support 0
+    /// Note also that the seed needs to be changed for each round
+    return MY_HASH_FN(element, parity_encoding_seed_ + round_count_) % (bch_n_ - 1) + 1;
+  }
 
-    auto &bitmap = bitmaps_[gid];
-    auto &xor_single = xor_[gid];
+  /**
+   * @brief Encode for a single group
+   *
+   * @param gid                  group id
+   * @param sketch               the minisketch for this group
+   * @param init_before_set      whether need initialize before set the values
+   */
+  void doEncode_(size_t gid, minisketch *sketch) {
+    bitmap_t bitmap(bch_n_, 0u);
+    size_t xor_start = gid * bch_n_;
 
     for (const auto elm : groups_[gid]) {
-      // make sure no one goes into the bin with id 0
-      // since minisketch does not support it right now
-      size_t loc = get_bin_index(elm);
-      bitmap[loc].flip();
-      xor_single[loc] ^= elm;
+      size_t loc = getBinId_(elm);
+      bitmap[loc] ^= 1u;
+      xors_[xor_start + loc] ^= elm;
+      checksums_[gid] ^= elm;
     }
 
-    minisketch *sketch = minisketch_create(bch_m_, 0, bch_capacity_);
-    for (size_t k = 0; k < bitmap.size(); ++k) {
+    for (uint64_t k = 0; k < bch_n_; ++k) {
       if (bitmap[k]) minisketch_add_uint64(sketch, k);
     }
-    minisketch *sketch_other = minisketch_create(bch_m_, 0, bch_capacity_);
-    minisketch_deserialize(sketch_other, other);
-    minisketch_merge(sketch, sketch_other);
-    differences.resize(bch_capacity_);
-    ssize_t p = minisketch_decode(sketch, bch_capacity_, &differences[0]);
-    minisketch_destroy(sketch);
-    minisketch_destroy(sketch_other);
-    return p;
   }
 
-  std::string encode_single_group(unsigned gid) {
-    size_t group_size = groups_[gid].size();
+  /**
+   * @brief BCH decoding failure handler
+   *
+   * @param gid       group id (the BCH decoding failure happens in this group)
+   */
+  inline void threeWaySplit_(size_t gid) {
+    // BCH decoding failed
+    size_t old_size = groups_.size();
+    groups_.resize(old_size + num_groups_when_bch_fail_);
 
-    auto &bitmap = bitmaps_[gid];
-    auto &xor_single = xor_[gid];
-
-    auto seed = bin_partition_seed();
-    for (const auto elm : groups_[gid]) {
-      // make sure no one goes into the bin with id 0
-      // since minisketch does not support it right now
-      size_t loc = hash(elm, seed) % (bch_length_ - 1) + 1;
-      bitmap[loc].flip();
-      xor_single[loc] ^= elm;
+    for (size_t k = 0; k < groups_[gid].size(); ++k) {
+      // Note that, seed should be different from group_partition_seed_, otherwise all elements would map to
+      // the same bin again
+      size_t index = MY_HASH_FN(groups_[gid][k], BCH_FAILURE_PARTITION_SEED + round_count_) %
+          num_groups_when_bch_fail_;
+      groups_[old_size + index].push_back(groups_[gid][k]);
     }
 
-    minisketch *sketch = minisketch_create(bch_m_, 0, bch_capacity_);
-    for (size_t k = 0; k < bitmap.size(); ++k) {
-      if (bitmap[k]) minisketch_add_uint64(sketch, k);
+#ifdef DEBUG_PBS
+    printf("%s: threeWaySplit_(%lu) | round %u | old size %lu | hash seed %lu | ",
+           (role_ == PbsRole::Alice ? "Alice" : "Bob"),
+           gid,
+           round_count_,
+           old_size,
+           group_partition_seed_ + round_count_);
+    for (size_t i = 0; i < num_groups_when_bch_fail_; ++i) {
+      printf(" %lu - ", groups_[old_size + i].size());
     }
-    std::string buffer(minisketch_serialized_size(sketch), ' ');
-    minisketch_serialize(sketch, (unsigned char *) &buffer[0]);
-    minisketch_destroy(sketch);
-    return buffer;
+    printf("\n");
+#endif
+    xors_.resize(xors_.size() + num_groups_when_bch_fail_ * bch_n_, 0);
+    checksums_.resize(checksums_.size() + num_groups_when_bch_fail_, 0);
+    to_original_group_id_.resize(to_original_group_id_.size() + num_groups_when_bch_fail_, to_original_group_id_[gid]);
   }
-
-  static uint32_t hash(KeyType key, unsigned seed) {
-    return XXH32(&key, sizeof(key), seed);
-  }
-
-  template<typename Iterator>
-  void hash_partition(Iterator first, Iterator last) {
-    size_t count = 0;
-    for (auto it = first; it != last; ++it) {
-      size_t gid = get_group_id(*it);
-      groups_[gid].push_back(*it);
-      group_ids_[count] = count++;
+  /**
+   * @brief Check whether there are exceptions in a group
+   *
+   * @param gid                  group id
+   * @param p                    how many "bit errors" were pinpointed by BCH
+   * @param bin_id_start         pointer to "bit error positions"
+   * @param a_xor                pointer to XORs
+   * @param checksum             checksum
+   */
+  void doDecodeCheck_(
+      std::size_t gid,
+      ssize_t p,
+      const uint64_t *bin_id_start,
+      const key_t *a_xor,
+      key_t checksum
+  ) {
+    std::vector<key_t> recovered;
+    key_t b_checksum = checksums_[gid];
+    size_t b_xor_start = bch_n_ * gid;
+    for (ssize_t i = 0; i < p; ++i) {
+      size_t bid = bin_id_start[i];
+      auto elm = a_xor[i] ^xors_[b_xor_start + bid];
+      size_t expected_gid = to_original_group_id_[gid];
+      size_t obtained_gid = getGroupId_(elm);
+      size_t obtained_bid = getBinId_(elm);
+      if (obtained_bid == bid && obtained_gid == expected_gid) {
+        // with very high probability, elm here is a correct distinct element
+        // Note that even if it turned out to be a fake, our algorithm can automatically
+        // fixes it in later rounds
+        recovered.push_back(elm);
+        b_checksum ^= elm;
+      }
+    }
+    // insert into results
+    recovered_[round_count_].insert(recovered_[round_count_].end(), recovered.begin(), recovered.end());
+    // checksum verification
+    if (checksum != b_checksum) {
+      // type (I) and/or (II) exception happened
+      // Note that, here we actually should change this corresponding group
+      // to the set difference between it and the recovered set.
+      // However, we simply appended all recovered elements into this group,
+      // because all our encoding operators are XOR-like, which means the common elements
+      // will be automatically cancelled out.
+      groups_[gid].insert(groups_[gid].end(), recovered.begin(), recovered.end());
+#ifdef DEBUG_PBS
+      printf("%s: group id %lu | group size %lu | decoded %lu | # of groups %lu\n",
+             (role_ == PbsRole::Alice ? "Alice" : "Bob"),
+             gid,
+             groups_[gid].size(),
+             recovered.size(),
+             groups_.size());
+#endif
+      // notice this encoder this group needs further handling
+      // groups_to_be_handled_.push_back(gid);
+      groups_.push_back(std::move(groups_[gid]));
+      to_original_group_id_.push_back(to_original_group_id_[gid]);
+      xors_.resize(xors_.size() + bch_n_, 0u);
+      checksums_.push_back(0u);
+      groups_exp_I_or_II_.push_back(gid);
     }
   }
 
-  size_t num_diffs_;
-  unsigned max_rounds_;
-  float avg_diffs_per_group_;
-  unsigned num_groups_when_bch_fail_;
-  unsigned current_round_;
-  ssize_t remaining_num_groups_;
-  size_t initial_num_groups_;
-
-  double target_success_prob_;
-  size_t bch_m_;
-  size_t bch_length_;
-  size_t bch_capacity_;
-
-  SeedPool seed_pool_;
-  std::vector<std::vector<KeyType>> groups_;
-  std::vector<std::vector<KeyType>> xor_;
-  std::vector<BitMap> bitmaps_;
-  std::vector<size_t> group_ids_;
+  /**
+   * @brief Update internal states
+   *
+   */
+  inline void removeCompletedGroups_() {
+    // recoding old size
+    hint_max_range_ = num_groups_remaining_;
+    // remove all groups in which reconciliation has completed
+    groups_.erase(groups_.begin(), groups_.begin() + num_groups_remaining_);
+    xors_.erase(xors_.begin(), xors_.begin() + bch_n_ * num_groups_remaining_);
+    checksums_.erase(checksums_.begin(), checksums_.begin() + num_groups_remaining_);
+    to_original_group_id_.erase(to_original_group_id_.begin(), to_original_group_id_.begin() + num_groups_remaining_);
+    num_groups_remaining_ = groups_.size();
+  }
 };
-
-#endif  // PBS_H_
+} // end namespace libpbs
+#endif //PARITY_BITMAP_SKETCH_H_
