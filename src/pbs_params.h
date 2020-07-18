@@ -164,7 +164,9 @@ class PbsParam {
    */
   static double failureProbabilityUB(size_t d, double delta, size_t n, size_t r,
                                      size_t t, size_t c) {
-    auto g = d / delta;
+    auto g = (double)d / delta;
+    // added @2020-07-17, since stats::dbinom reuqires g >= 1
+    if (g < 1) g = 1;
     size_t m = std::min(MAX_BALLS, n - 1);
     auto mr_md = computeMultiRoundProbabilityMatrix(m, n, t, r);
     double prob_fail_one_group = 0;

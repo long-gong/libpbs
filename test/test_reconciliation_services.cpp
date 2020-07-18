@@ -10,6 +10,7 @@
 std::promise<void> exit_estimation_service;
 std::promise<void> exit_pinsketch_service;
 std::promise<void> exit_push_pull_service;
+std::promise<void> exit_pbs_service;
 
 void stop_estimation_service() {
   exit_estimation_service.set_value();
@@ -17,6 +18,10 @@ void stop_estimation_service() {
 
 void stop_pinsketch_service() {
   exit_pinsketch_service.set_value();
+}
+
+void stop_pbs_service() {
+  exit_pbs_service.set_value();
 }
 
 void stop_push_pull_service() {
@@ -87,6 +92,42 @@ void run_server_for_testing_pinsketch_service() {
 
   std::thread serving_thread(serveFn);
   auto f = exit_pinsketch_service.get_future();
+  f.wait();
+  server->Shutdown();
+  serving_thread.join();
+}
+
+void run_server_for_testing_pbs_service() {
+  std::string server_address("0.0.0.0:50051");
+  EstimationServiceImpl service;
+
+  auto server_data_ptr = std::make_shared<tsl::ordered_map<Key, Value>>(tsl::ordered_map<Key, Value>{
+      {4, "4444"}, {6, "666666"}, {3, "333"}, {5, "55555"}
+  });
+
+  service.set_key_value_pairs(server_data_ptr);
+  service.set_estimated_diff(4);
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server (testing pbs service) listening on " << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  auto serveFn = [&]() {
+    server->Wait();
+  };
+
+  std::thread serving_thread(serveFn);
+  auto f = exit_pbs_service.get_future();
   f.wait();
   server->Shutdown();
   serving_thread.join();
@@ -167,6 +208,28 @@ TEST(ReconciliationServicesTest, PinSketchService) {
   }
 
   stop_pinsketch_service();
+  th_run_server.join();
+}
+
+TEST(ReconciliationServicesTest, ParityBitmapSketchService) {
+  std::thread th_run_server(run_server_for_testing_pbs_service);
+  std::this_thread::sleep_for(1s);// make sure server is ready when client calls
+  {
+    // start a client
+    std::string target_str = "localhost:50051";
+    ReconciliationClient client(
+        grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+    tsl::ordered_map<Key, Value> client_data{
+        {1, "1"}, {2, "22"}, {3, "333"}, {5, "55555"}
+    };
+    tsl::ordered_map<Key, Value> expected{
+        {1, "1"}, {2, "22"}, {3, "333"}, {5, "55555"}, {4, "4444"}, {6, "666666"}
+    };
+    EXPECT_TRUE(client.Reconciliation_ParityBitmapSketch(client_data, 4));
+    EXPECT_EQ(expected, client_data);
+  }
+
+  stop_pbs_service();
   th_run_server.join();
 }
 

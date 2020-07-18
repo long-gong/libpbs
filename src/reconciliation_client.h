@@ -178,14 +178,14 @@ class ReconciliationClient {
       scaled_d = ESTIMATE_SM99(est);
     }
 
-    if (_pbs == nullptr) {
-      _pbs = std::make_unique<libpbs::ParityBitmapSketch>(scaled_d);
-      for (const auto &kv : key_value_pairs) _pbs->add(kv.first);
-    }
+    auto _pbs = std::make_unique<libpbs::ParityBitmapSketch>(scaled_d);
+    for (const auto &kv : key_value_pairs) _pbs->add(kv.first);
 
     bool completed = false, syn_completed = false;
+
+    std::vector<uint64_t> res;
     do {
-      std::vector<uint64_t> xors, checksums, res, missing;
+      std::vector<uint64_t> xors, checksums, missing;
 
       if (completed) {
         // set reconciliation completed
@@ -210,16 +210,27 @@ class ReconciliationClient {
         break;
       }
       auto [enc, hint] = _pbs->encode();
+//      printf("client: m %u | t %u | g %u\n", enc->field_sz, enc->capacity,
+//             enc->num_groups);
 
       PbsRequest request;
-      auto buffer =
-          request.mutable_encoding_msg()->append(enc->serializedSize(), 0);
-      enc->write((uint8_t *)&buffer[0]);
-      if (hint != nullptr) {
-        auto hint_buffer =
-            request.mutable_encoding_hint()->append(hint->serializedSize(), 0);
-        hint->write((uint8_t *)&hint_buffer[0]);
+      request.mutable_encoding_msg()->resize(enc->serializedSize(), 0);
+      enc->write((uint8_t *)&(*request.mutable_encoding_msg())[0]);
+
+      {
+        auto print = [](const uint8_t key) {
+          std::cout << (uint32_t) key << " ";
+        };
+        std::cout << "Client (encoding-message): ";
+        std::for_each(request.encoding_msg().cbegin(), request.encoding_msg().cend(), print);
+        std::cout << std::endl;
       }
+
+      if (hint != nullptr) {
+        request.mutable_encoding_hint()->resize(hint->serializedSize(), 0);
+        hint->write((uint8_t *)&(*request.mutable_encoding_hint())[0]);
+      }
+
       if (!res.empty()) {
         for (const auto &k : res) {
           if (key_value_pairs.contains(k)) {
@@ -253,12 +264,41 @@ class ReconciliationClient {
 
       libpbs::PbsDecodingMessage decoding_message(
           _pbs->bchParameterM(), _pbs->bchParameterT(), _pbs->numberOfGroups());
+
+      {
+        auto print = [](const char key) {
+          std::cout << (uint32_t )key << " ";
+        };
+        std::cout << "Client (decoding_msg): ";
+        std::for_each(reply.decoding_msg().cbegin(), reply.decoding_msg().cend(), print);
+        std::cout << std::endl;
+      }
+
+      decoding_message.parse((const uint8_t*)reply.decoding_msg().c_str(), reply.decoding_msg().size());
+
+      {
+        auto print = [](const uint64_t key) {
+          std::cout << key << " ";
+        };
+        std::cout << "Client (decoded_num_differences): ";
+        std::for_each(decoding_message.decoded_num_differences.cbegin(), decoding_message.decoded_num_differences.cend(), print);
+        std::cout << std::endl;
+      }
+
       xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
       checksums.insert(checksums.end(), reply.checksum().cbegin(),
                        reply.checksum().cend());
+
       completed = _pbs->decodeCheck(decoding_message, xors, checksums);
 
       res = _pbs->differencesLastRound();
+
+      auto print = [](const uint64_t key) {
+        std::cout << key << " ";
+      };
+      std::cout << "Round #" << _pbs->rounds() << ": ";
+      std::for_each(res.begin(), res.end(), print);
+      std::cout << std::endl;
     } while (true);
 
     return syn_completed;
@@ -315,9 +355,6 @@ class ReconciliationClient {
  private:
   std::unique_ptr<Estimation::Stub> stub_;
   TugOfWarHash<XXHash> _estimator;
-
-  //
-  std::unique_ptr<libpbs::ParityBitmapSketch> _pbs;
 };
 
 #endif  // RECONCILIATION_CLIENT_H_

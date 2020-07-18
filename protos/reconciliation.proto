@@ -34,15 +34,15 @@ message PinSketchReply {
 
 
 message PbsRequest {
-    string encoding_msg = 1;
-    string encoding_hint = 2;
+    bytes encoding_msg = 1;
+    bytes encoding_hint = 2;
 
     repeated KeyValue pushed_key_values = 3;
     repeated uint32 missing_keys = 4;
 }
 
 message PbsReply {
-    string decoding_msg = 1;
+    bytes decoding_msg = 1;
     repeated uint32 xors = 2;
     repeated uint32 checksum = 3;
 

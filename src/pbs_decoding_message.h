@@ -74,7 +74,7 @@ class PbsDecodingMessage : public PbsMessage {
         field_sz(m),
         capacity(t),
         num_groups(g),
-        sizeof_each_d(std::ceil(std::log2(capacity + 2))),
+        sizeof_each_d(utils::CeilLog2(capacity + 2)),
         decoding_failure_flag(utils::UIntXMax(sizeof_each_d)),
         decoded_num_differences(g),
         decoded_differences(g * capacity) {}
@@ -138,14 +138,13 @@ class PbsDecodingMessage : public PbsMessage {
     }
     // correct size
     decoded_differences.resize(count, 0);
-    auto total_bytes = serializedSize();
-    if (total_bytes < msg_sz) return -1;
+    size_t total_bytes = serializedSize();
+    if (total_bytes > msg_sz) return -1;
 
     // read difference parts
     for (auto &diff : decoded_differences) {
       diff = reader.Read<uint64_t>(field_sz);
     }
-
     return total_bytes;
   }
 

@@ -13,13 +13,13 @@
 
 #include <minisketch.h>
 
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <vector>
-#include <cstring>
-#include <cstdlib>
 
-#include "pbs_message.h"
 #include "bit_utils.h"
+#include "pbs_message.h"
 
 namespace libpbs {
 /**
@@ -47,7 +47,7 @@ class PbsEncodingMessage : public PbsMessage {
         field_sz(m),
         n((1u << m) - 1u),
         capacity(t),
-        num_groups(g){
+        num_groups(g) {
     create_sketches();
   }
 
@@ -69,7 +69,8 @@ class PbsEncodingMessage : public PbsMessage {
   /**
    * @brief Parse from buffer.
    *
-   * @note To be able to parse, at least field_sz and capacity should be available.
+   * @note To be able to parse, at least field_sz and capacity should be
+   * available.
    *
    * @param from            buffer to parse
    * @param msg_sz          buffer size (in bytes)
@@ -79,7 +80,7 @@ class PbsEncodingMessage : public PbsMessage {
     // no enough information to parse the buffer
     if (field_sz == 0 || capacity == 0 || num_groups == 0) return -1;
     uint32_t sketch_sz = field_sz * capacity;
-    uint32_t total_bytes = (sketch_sz * num_groups + 7) / 8;
+    uint32_t total_bytes = utils::Bits2Bytes(sketch_sz * num_groups);
     if (total_bytes > msg_sz) return -1;
     uint32_t sketch_bytes = sketch_sz / 8;
     uint32_t sketch_bits_remainder = sketch_sz % 8;
@@ -99,8 +100,8 @@ class PbsEncodingMessage : public PbsMessage {
   [[nodiscard]] ssize_t serializedSize() const override {
     // nothing to write
     if (field_sz == 0 || capacity == 0 || num_groups == 0) return -1;
-    uint32_t total_bytes = (field_sz * capacity * num_groups + 7 / 8);
-    return total_bytes;
+    uint32_t total_bits = field_sz * capacity * num_groups;
+    return utils::Bits2Bytes(total_bits);
   }
 
   /**
@@ -117,7 +118,7 @@ class PbsEncodingMessage : public PbsMessage {
     uint32_t sketch_bytes = sketch_sz / 8;
     uint32_t sketch_bits_remainder = sketch_sz % 8;
     size_t total_bytes = serializedSize();
-    memset(to, 0, total_bytes);
+    std::fill(to, to + total_bytes, 0);
     if (sketch_bits_remainder == 0)
       write_good(to, sketch_bytes);
     else
@@ -131,9 +132,7 @@ class PbsEncodingMessage : public PbsMessage {
    *
    * @return   sketches
    */
-  std::vector<minisketch *> &getSketches() {
-    return sketches_;
-  }
+  std::vector<minisketch *> &getSketches() { return sketches_; }
 
   /**
    * @brief Get the i-th sketch
@@ -151,7 +150,9 @@ class PbsEncodingMessage : public PbsMessage {
    *
    * @return   sketches
    */
-  [[nodiscard]] const std::vector<minisketch *> &getSketches() const { return sketches_; }
+  [[nodiscard]] const std::vector<minisketch *> &getSketches() const {
+    return sketches_;
+  }
 
   /**
    * @brief Get the i-th sketch (read-only)
@@ -165,7 +166,6 @@ class PbsEncodingMessage : public PbsMessage {
   }
 
  private:
-
   /**
    * @brief Write for the good cases
    *
@@ -202,6 +202,8 @@ class PbsEncodingMessage : public PbsMessage {
       memcpy(to + i * sketch_bytes, buf, sketch_bytes);
       writer.Write<uint8_t>(buf[sketch_bytes], sketch_bits_remainder);
     }
+    // tell writer I am finished
+    writer.Flush();
     free(buf);
   }
 
@@ -248,7 +250,7 @@ class PbsEncodingMessage : public PbsMessage {
    *
    */
   void create_sketches() {
-    for (size_t i = 0;i < num_groups;++ i) {
+    for (size_t i = 0; i < num_groups; ++i) {
       sketches_.push_back(minisketch_create(field_sz, 0, capacity));
     }
   }

@@ -71,7 +71,7 @@ class PinSketch {
   }
 
  private:
-  std::string serialize() const {
+  [[nodiscard]] std::string serialize() const {
     assert(sketch_!= nullptr);
     size_t sersize = minisketch_serialized_size(sketch_);
     std::string buffer(sersize, ' ');
