@@ -12,7 +12,7 @@
 #define _PBS_DECODING_HINT_MESSAGE_H_
 
 #include <numeric>
-#include <cassert>
+#include <stdexcept>
 
 #include "pbs_decoding_message.h"
 #include "pbs_message.h"
@@ -28,6 +28,18 @@ constexpr std::size_t BITS_PER_BLOCK = 8u;
  *
  * It tells whether exceptions (exception I or II) happens in the corresponding
  * PbsDecodingMessage instance.
+ *
+ * About the design choice
+ * -----------------------
+ * In the current implementation, we only encode the IDs of groups where exceptions happened,
+ * each of which has a length of log2 max_range bits. According to our analysis, the probability
+ * of the event that a group becomes the ideal case is around 0.96. That is the exception
+ * happens with a probability of roughly 0.04. Therefore, the average number of bits using
+ * this approach is around 0.04 * max_range * log2 max_range.
+ * An alternative approach is to use a bitmap with a length of max_range. To make this approach better
+ * than the one we currently use, we should have:
+ *             0.04 * max_range * log2 max_range > max_range  ==> max_range > 2^25
+ *  In most applications, max_range should be less than 2^25.
  *
  * Note that there is no need for the hint of BCH decoding failure.
  *
@@ -47,10 +59,13 @@ class PbsEncodingHintMessage : public PbsMessage {
   explicit PbsEncodingHintMessage(size_t max_range)
       : PbsMessage(PbsMessageType::ENCODING_HINT),
         max_range(max_range),
+        bits_each(utils::CeilLog2(max_range)),
         groups_with_exceptions() {}
   ~PbsEncodingHintMessage() override = default;
   // maximum range of group IDs
   std::size_t max_range;
+  // bits for each ID
+  std::size_t bits_each;
   // IDs of groups where exception (I) or (II) happened
   std::vector<uint32_t> groups_with_exceptions;
 
@@ -63,8 +78,10 @@ class PbsEncodingHintMessage : public PbsMessage {
    */
   ssize_t parse(const uint8_t *from, size_t msg_sz) override {
     if (msg_sz == 0) return 0;
-    for (size_t i = 0; i < max_range; ++i)
-      if ((from[block_index(i)] & bit_mask(i)) != 0u) groups_with_exceptions.push_back(i);
+    utils::BitReader reader(from);
+    auto count = msg_sz * 8 / bits_each;
+    groups_with_exceptions.resize(count, 0);
+    for (auto& gid: groups_with_exceptions) gid = reader.Read<uint32_t>(bits_each);
     return msg_sz;
   }
 
@@ -74,7 +91,7 @@ class PbsEncodingHintMessage : public PbsMessage {
    * @param gid     group ID
    */
   void addGroupId(uint32_t gid) {
-    assert (gid < max_range);
+    if (gid >= max_range) throw std::out_of_range("gid is out of range");
     groups_with_exceptions.push_back(gid);
   }
 
@@ -86,9 +103,13 @@ class PbsEncodingHintMessage : public PbsMessage {
    */
   ssize_t write(uint8_t *to) const override {
     auto sz = serializedSize();
-    memset(to, 0, sz);
+    std::fill(to, to + sz, 0);
+    utils::BitWriter writer(to);
     for (uint32_t gid: groups_with_exceptions)
-      to[block_index(gid)] |= bit_mask(gid);
+      writer.Write<uint32_t>(gid, bits_each);
+    // tell writer that I am completed
+    writer.Flush();
+    return sz;
   }
 
   /**
@@ -97,38 +118,8 @@ class PbsEncodingHintMessage : public PbsMessage {
    * @return    serialized size
    */
   [[nodiscard]] ssize_t serializedSize() const override {
-    return utils::Bits2Bytes(max_range);
-  }
-
- private:
-  /**
-   * @brief Get the block index.
-   *
-   * @param pos      bit position to obtain the block index for
-   * @return         block index
-   */
-  [[nodiscard]] constexpr size_t block_index(size_t pos) const noexcept {
-    return pos / BITS_PER_BLOCK;
-  }
-
-  /**
-   * @brief Get bit mask.
-   *
-   * @param pos       bit position to get the bit mask for
-   * @return          bit mask
-   */
-  [[nodiscard]] constexpr uint8_t bit_mask(size_t pos) const noexcept {
-    return ((uint8_t) 1) << bit_index(pos);
-  }
-
-  /**
-   * @brief Get bit index within a block
-   *
-   * @param pos      bit position to obtain the bit index for
-   * @return         bit index
-   */
-  [[nodiscard]] constexpr size_t bit_index(size_t pos) const noexcept {
-    return pos % BITS_PER_BLOCK;
+    auto total_bits = groups_with_exceptions.size() * bits_each;
+    return utils::Bits2Bytes(total_bits);
   }
 };
 }  // end namespace libpbs

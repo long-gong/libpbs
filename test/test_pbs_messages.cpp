@@ -258,12 +258,10 @@ TEST(PbsMessagesTest, DecodingMessageSetWithMixed) {
       minisketch_add_uint64(sketches[g], diffs[g].back());
     }
   }
-
   message.setWith(sketches.begin(), sketches.begin() + num_groups,
                   sketches.cbegin() + num_groups);
-
   size_t offset = 0;
-  for (size_t g = 0;g < num_groups;++g) {
+  for (size_t g = 0; g < num_groups; ++g) {
     if (num_diffs[g] > bch_t) {
       EXPECT_EQ(message.decoded_num_differences[g], -1);
     } else {
@@ -278,51 +276,33 @@ TEST(PbsMessagesTest, DecodingMessageSetWithMixed) {
   for (auto &sketch : sketches) minisketch_destroy(sketch);
 }
 
-TEST(PbsMessagesTest, DecodingHintMessage) {
+TEST(PbsMessagesTest, EncodingHintMessageOutOfRangeError) {
   size_t num_groups = 215;
-  PbsEncodingHintMessage decoding_hint_message(num_groups);
+  PbsEncodingHintMessage hint_message(num_groups);
 
   std::vector<uint32_t> test_ids = {1, 9, 101};
-  for (uint32_t gid : test_ids) decoding_hint_message.addGroupId(gid);
+  for (uint32_t gid : test_ids) hint_message.addGroupId(gid);
 
-  auto ss = decoding_hint_message.serializedSize();
-  std::vector<uint8_t> buffer(ss, 0);
-  decoding_hint_message.write(&buffer[0]);
-  {
-    PbsEncodingHintMessage decoding_hint_message1(num_groups);
-    auto psz = decoding_hint_message1.parse(&buffer[0], buffer.size());
-    EXPECT_EQ(buffer.size(), psz);
-    EXPECT_EQ(decoding_hint_message.groups_with_exceptions, test_ids);
-  }
+  EXPECT_THROW(hint_message.addGroupId(215), std::out_of_range);
 }
 
-// TEST(PbsMessagesTest, DecodingHintMessage) {
-//  PbsDecodingMessage message(12, 7, 3);
-//  message.decoded_num_differences = {3, 2, -1};
-//  message.decoded_differences = {1, 2, 3, 19, 43};
-//
-//  PbsEncodingHintMessage decoding_hint_message(message);
-//  decoding_hint_message.exception_i_flags = {0, 1, 0};
-//  decoding_hint_message.exception_ii_counts = {1, 1, 0};
-//  decoding_hint_message.exception_ii_bins = {2, 1};
-//
-//  auto ss = decoding_hint_message.serializedSize();
-//  std::vector<uint8_t> buffer(ss, 0);
-//  decoding_hint_message.write(&buffer[0]);
-//  {
-//    PbsEncodingHintMessage decoding_hint_message1(message);
-//    auto psz = decoding_hint_message1.parse(&buffer[0], buffer.size());
-//
-//    EXPECT_EQ(buffer.size(), psz);
-//
-//    EXPECT_EQ(decoding_hint_message.exception_i_flags,
-//              decoding_hint_message1.exception_i_flags);
-//    EXPECT_EQ(decoding_hint_message.exception_ii_counts,
-//              decoding_hint_message1.exception_ii_counts);
-//    EXPECT_EQ(decoding_hint_message.exception_ii_bins,
-//              decoding_hint_message1.exception_ii_bins);
-//  }
-//}
+TEST(PbsMessagesTest, EncodingHintMessage) {
+  size_t num_groups = 215;
+  PbsEncodingHintMessage hint_message(num_groups);
+
+  std::vector<uint32_t> test_ids = {1, 9, 101};
+  for (uint32_t gid : test_ids) hint_message.addGroupId(gid);
+
+  auto ss = hint_message.serializedSize();
+  EXPECT_EQ(ss, 3);
+  std::vector<uint8_t> buffer(ss, 0);
+  hint_message.write(&buffer[0]);
+
+  PbsEncodingHintMessage hint_message1(num_groups);
+  auto psz = hint_message1.parse(&buffer[0], buffer.size());
+  EXPECT_EQ(buffer.size(), psz);
+  EXPECT_EQ(hint_message.groups_with_exceptions, test_ids);
+}
 
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest();
