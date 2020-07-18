@@ -145,26 +145,13 @@ class EstimationServiceImpl final : public Estimation::Service {
             "encoding hint in the first round should be empty!!");
       }
       auto [my_enc_tmp, dummy] = _pbs->encode();
+      (void)dummy; // avoid unused variable warning
       my_enc = my_enc_tmp;
     } else {
-      if (request->encoding_hint().empty())
-        throw std::runtime_error("encoding hint should not be empty!!");
       libpbs::PbsEncodingHintMessage hint(_pbs->hint_max_range());
       hint.parse((const uint8_t *)request->encoding_hint().c_str(),
                  request->encoding_hint().size());
       my_enc = _pbs->encodeWithHint(hint);
-    }
-
-//    printf("Server: m %u | t %u | g %u\n", my_enc->field_sz, my_enc->capacity,
-//           my_enc->num_groups);
-
-    {
-      auto print = [](const uint8_t key) {
-        std::cout << (uint32_t) key << " ";
-      };
-      std::cout << "Server (encoding-message): ";
-      std::for_each(request->encoding_msg().cbegin(), request->encoding_msg().cend(), print);
-      std::cout << std::endl;
     }
 
     libpbs::PbsEncodingMessage other_enc(my_enc->field_sz, my_enc->capacity,
@@ -173,31 +160,16 @@ class EstimationServiceImpl final : public Estimation::Service {
                     request->encoding_msg().size());
     auto decoding_msg = _pbs->decode(other_enc, xors, checksums);
 
-    {
-      auto print = [](const uint64_t key) {
-        std::cout << key << " ";
-      };
-      std::cout << "Server (decoded_num_differences): ";
-      std::for_each(decoding_msg->decoded_num_differences.cbegin(), decoding_msg->decoded_num_differences.cend(), print);
-      std::cout << std::endl;
-    }
-
-
     auto ssz = decoding_msg->serializedSize();
     response->mutable_decoding_msg()->resize(ssz, 0);
 
     decoding_msg->write((uint8_t *)&(*response->mutable_decoding_msg())[0]);
 
-    {
-      auto print = [](const char key) {
-        std::cout << (uint32_t )key << " ";
-      };
-      std::cout << "Server (decoding_message): ";
-      std::for_each(response->decoding_msg().cbegin(), response->decoding_msg().cend(), print);
-      std::cout << std::endl;
-    }
-
     for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
+
+    std::vector<uint64_t > tests;
+    tests.insert(tests.end(), response->xors().cbegin(), response->xors().cend());
+
     for (auto checksum : checksums)
       *(response->mutable_checksum()->Add()) = checksum;
 

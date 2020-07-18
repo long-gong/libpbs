@@ -7,13 +7,12 @@
 #include <cmath>
 #include <tsl/ordered_set.h>
 
-namespace libpbs {
-namespace utils {
+namespace libpbs::utils {
 namespace constants {
 constexpr std::size_t BITS_IN_ONE_BYTE = 8;
 }
 
-inline uint32_t UIntXMax(uint32_t bits) { return (1u << (bits - 1u)) - 1u; }
+inline uint32_t UIntXMax(uint32_t bits) { return (1u << bits) - 1u; }
 inline std::size_t Bits2Bytes(std::size_t bits) {
   return (bits + constants::BITS_IN_ONE_BYTE - 1) / constants::BITS_IN_ONE_BYTE;
 }
@@ -113,7 +112,6 @@ class BitReader {
     return val;
   }
 };
-}  // namespace utils
 }  // namespace libpbs
 
 #endif  // BIT_UTILS_H_

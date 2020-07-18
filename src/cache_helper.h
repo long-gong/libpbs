@@ -13,6 +13,9 @@
 
 #include "eigen_boost_serialization.hpp"
 
+// TODO: change to boost::cache
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #if __cplusplus >= 201703L
 /* Now remove the trow */
 #define throw( \
@@ -22,6 +25,7 @@
 #else
 #include <stlcache/stlcache.hpp>
 #endif
+#pragma GCC diagnostic pop
 
 #define YELLOW "\033[33m" /* Yellow */
 #define DEFAULT_CACHE_DIR "../cache/"

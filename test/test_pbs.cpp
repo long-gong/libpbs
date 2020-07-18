@@ -479,11 +479,12 @@ void DoDeterministicAliceIsEmpty(size_t d, int verbose) {
       EXPECT_TRUE(result.count(e) > 0)
           << "[d = " << d << "]: " << e << " should be in the result"
           << std::endl;
-      if (result.count(e) > 0)
+      if (result.count(e) > 0) {
         EXPECT_TRUE((result[e] % 2 == 1))
-            << "[d = " << d << "]: " << e
-            << " should appear odd times in the result, but it appears "
-            << result[e] << " times" << std::endl;
+                  << "[d = " << d << "]: " << e
+                  << " should appear odd times in the result, but it appears "
+                  << result[e] << " times" << std::endl;
+      }
     }
 
     EXPECT_EQ(alice.rounds(), bob.rounds());

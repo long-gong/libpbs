@@ -19,6 +19,8 @@
 #include "pinsketch.h"
 #include "reconciliation.grpc.pb.h"
 
+#include <fmt/format.h>
+
 using namespace std::chrono_literals;
 
 using grpc::Channel;
@@ -47,7 +49,7 @@ class ReconciliationClient {
       : stub_(Estimation::NewStub(channel)),
         _estimator(DEFAULT_SKETCHES_, DEFAULT_SEED) {}
 
-  template <typename PushKeyIterator, typename PullKeyIterator>
+  template<typename PushKeyIterator, typename PullKeyIterator>
   bool PushAndPull(PushKeyIterator push_first, PushKeyIterator push_last,
                    PullKeyIterator pull_first, PullKeyIterator pull_last,
                    tsl::ordered_map<Key, Value> &key_value_pairs) {
@@ -70,7 +72,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-                    syn_status.error_message())
+          syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -79,7 +81,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template <typename KeyIterator>
+  template<typename KeyIterator>
   bool Pull(KeyIterator first, KeyIterator last,
             tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -95,7 +97,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-                    syn_status.error_message())
+          syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -104,7 +106,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template <typename KeyIterator>
+  template<typename KeyIterator>
   bool Push(KeyIterator first, KeyIterator last,
             const tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -122,7 +124,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-                    syn_status.error_message())
+          syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -154,7 +156,7 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-                    status.error_message())
+          status.error_message())
                 << std::endl;
       return false;
     }
@@ -184,6 +186,7 @@ class ReconciliationClient {
     bool completed = false, syn_completed = false;
 
     std::vector<uint64_t> res;
+
     do {
       std::vector<uint64_t> xors, checksums, missing;
 
@@ -206,29 +209,20 @@ class ReconciliationClient {
         syn_completed = true;
         break;
       }
+
       if (_pbs->rounds() >= PBS_MAX_ROUNDS) {
         break;
       }
-      auto [enc, hint] = _pbs->encode();
-//      printf("client: m %u | t %u | g %u\n", enc->field_sz, enc->capacity,
-//             enc->num_groups);
+
+      auto[enc, hint] = _pbs->encode();
 
       PbsRequest request;
       request.mutable_encoding_msg()->resize(enc->serializedSize(), 0);
-      enc->write((uint8_t *)&(*request.mutable_encoding_msg())[0]);
-
-      {
-        auto print = [](const uint8_t key) {
-          std::cout << (uint32_t) key << " ";
-        };
-        std::cout << "Client (encoding-message): ";
-        std::for_each(request.encoding_msg().cbegin(), request.encoding_msg().cend(), print);
-        std::cout << std::endl;
-      }
+      enc->write((uint8_t *) &(*request.mutable_encoding_msg())[0]);
 
       if (hint != nullptr) {
         request.mutable_encoding_hint()->resize(hint->serializedSize(), 0);
-        hint->write((uint8_t *)&(*request.mutable_encoding_hint())[0]);
+        hint->write((uint8_t *) &(*request.mutable_encoding_hint())[0]);
       }
 
       if (!res.empty()) {
@@ -249,10 +243,11 @@ class ReconciliationClient {
       // The actual RPC.
       Status status =
           stub_->ReconcileParityBitmapSketch(&context, request, &reply);
+
       // Act upon its status.
       if (!status.ok()) {
         std::cerr << (std::to_string(status.error_code()) + ": " +
-                      status.error_message())
+            status.error_message())
                   << std::endl;
         return false;
       }
@@ -265,46 +260,23 @@ class ReconciliationClient {
       libpbs::PbsDecodingMessage decoding_message(
           _pbs->bchParameterM(), _pbs->bchParameterT(), _pbs->numberOfGroups());
 
-      {
-        auto print = [](const char key) {
-          std::cout << (uint32_t )key << " ";
-        };
-        std::cout << "Client (decoding_msg): ";
-        std::for_each(reply.decoding_msg().cbegin(), reply.decoding_msg().cend(), print);
-        std::cout << std::endl;
-      }
+      decoding_message.parse((const uint8_t *) reply.decoding_msg().c_str(), reply.decoding_msg().size());
 
-      decoding_message.parse((const uint8_t*)reply.decoding_msg().c_str(), reply.decoding_msg().size());
-
-      {
-        auto print = [](const uint64_t key) {
-          std::cout << key << " ";
-        };
-        std::cout << "Client (decoded_num_differences): ";
-        std::for_each(decoding_message.decoded_num_differences.cbegin(), decoding_message.decoded_num_differences.cend(), print);
-        std::cout << std::endl;
-      }
 
       xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
       checksums.insert(checksums.end(), reply.checksum().cbegin(),
                        reply.checksum().cend());
-
       completed = _pbs->decodeCheck(decoding_message, xors, checksums);
-
       res = _pbs->differencesLastRound();
 
-      auto print = [](const uint64_t key) {
-        std::cout << key << " ";
-      };
-      std::cout << "Round #" << _pbs->rounds() << ": ";
-      std::for_each(res.begin(), res.end(), print);
-      std::cout << std::endl;
+      fmt::print("Round #{}: {:>6} of {:>6} decoded\n", _pbs->rounds(), res.size(), d);
+
     } while (true);
 
     return syn_completed;
   }
 
-  template <typename Iterator>
+  template<typename Iterator>
   float EstimationKeyValuePairs(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply_key_value_pairs(first, last);
     // Data we are sending to the server.
@@ -329,7 +301,7 @@ class ReconciliationClient {
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
-  template <typename Iterator>
+  template<typename Iterator>
   float Estimation(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply(first, last);
     // Data we are sending to the server.

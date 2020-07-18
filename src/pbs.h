@@ -42,12 +42,6 @@ constexpr double DEFAULT_TARGET_SUCCESS_PROB = 0.99;
 constexpr uint64_t DEFAULT_SEED_G = 0x6d496e536b65LU;
 constexpr uint64_t SEED_OFFSET = 142857;
 constexpr uint64_t BCH_FAILURE_PARTITION_SEED = 0x5A8923ALU;
-
-enum class PbsRole {
-  Alice,
-  Bob,
-  Undetermined
-};
 } // namespace
 
 
@@ -59,6 +53,11 @@ using bitmap_t = std::vector<uint8_t>;
  *
  */
 class ParityBitmapSketch {
+  enum class PbsRole {
+    Alice,
+    Bob,
+    Undetermined
+  };
  public:
   /**
    * @brief Constructor
@@ -156,7 +155,7 @@ class ParityBitmapSketch {
    * @return          a shared pointer to a PBS encoding message
    */
   std::shared_ptr<PbsEncodingMessage> encodeWithHint(const PbsEncodingHintMessage &msg) {
-    encodeWithHint(msg.groups_with_exceptions.begin(), msg.groups_with_exceptions.end());
+    return encodeWithHint(msg.groups_with_exceptions.begin(), msg.groups_with_exceptions.end());
   }
 
   /**
@@ -210,6 +209,7 @@ class ParityBitmapSketch {
                                              std::vector<key_t> &checksums) {
     if (role_ == PbsRole::Alice) throw std::logic_error("Alice can not do decode");
     assert (other.num_groups == num_groups_remaining_);
+    hint_max_range_ = num_groups_remaining_;
     role_ = PbsRole::Bob;
     pbs_decoding_ = std::make_shared<PbsDecodingMessage>(bch_m_, bch_t_, num_groups_remaining_);
     pbs_decoding_->setWith(pbs_encoding_->getSketches().begin(),
@@ -220,7 +220,7 @@ class ParityBitmapSketch {
     checksums.clear();
     for (const auto p: pbs_decoding_->decoded_num_differences) {
       if (p >= 0) {
-        for (size_t k = 0; k < p; ++k) {
+        for (size_t k = 0; k < (size_t)p; ++k) {
           auto bid = pbs_decoding_->decoded_differences[offset + k];
           xors.push_back(xors_[gid * bch_n_ + bid]);
         }
@@ -548,7 +548,7 @@ class ParityBitmapSketch {
    */
   inline void removeCompletedGroups_() {
     // recoding old size
-    hint_max_range_ = num_groups_remaining_;
+    if (role_ == PbsRole::Alice) hint_max_range_ = num_groups_remaining_;
     // remove all groups in which reconciliation has completed
     groups_.erase(groups_.begin(), groups_.begin() + num_groups_remaining_);
     xors_.erase(xors_.begin(), xors_.begin() + bch_n_ * num_groups_remaining_);
