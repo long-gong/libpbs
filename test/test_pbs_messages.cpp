@@ -304,6 +304,24 @@ TEST(PbsMessagesTest, EncodingHintMessage) {
   EXPECT_EQ(hint_message.groups_with_exceptions, test_ids);
 }
 
+TEST(PbsMessagesTest, EncodingHintMessageShortMessage) {
+  size_t num_groups = 7;
+  PbsEncodingHintMessage hint_message(num_groups);
+
+  std::vector<uint32_t> test_ids = {0, 1, 6};
+  for (uint32_t gid : test_ids) hint_message.addGroupId(gid);
+
+  auto ss = hint_message.serializedSize();
+  EXPECT_EQ(ss, 2);
+  std::vector<uint8_t> buffer(ss, 0);
+  hint_message.write(&buffer[0]);
+
+  PbsEncodingHintMessage hint_message1(num_groups);
+  auto psz = hint_message1.parse(&buffer[0], buffer.size());
+  EXPECT_EQ(buffer.size(), psz);
+  EXPECT_EQ(hint_message.groups_with_exceptions, test_ids);
+}
+
 int main(int argc, char **argv) {
   ::testing::InitGoogleTest();
   return RUN_ALL_TESTS();
