@@ -91,10 +91,13 @@ target_link_libraries(test_pbs
         Eigen3::Eigen
         fmt::fmt)
 
-
+# avoid to change source code
+configure_file(../3rd/include/iblt/param.export.0.995833.2018-07-17.csv ${CMAKE_CURRENT_BINARY_DIR}/param.export.0.995833333333333.2018-07-12.csv
+        COPYONLY )
 add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp" ${proto_obj} ${grpc_obj}
         ${proto_srcs}
-        ${grpc_srcs})
+        ${grpc_srcs}
+        ${ddigest_objs})
 target_include_directories(test_reconciliation_services
         PRIVATE
         ${GRPCPP_INCLUDE_DIRS}

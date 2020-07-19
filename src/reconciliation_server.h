@@ -4,6 +4,10 @@
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
+#include <iblt/iblt.h>
+#include <iblt/utilstrencodings.h>
+#include <iblt/search_params.h>
+#include <bloom/bloom_filter.h>
 #include <tsl/ordered_map.h>
 #include <tsl/ordered_set.h>
 
@@ -24,12 +28,22 @@ using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
 
+using reconciliation::SetUpRequest;
+using reconciliation::SetUpReply;
+
 using reconciliation::EstimateReply;
 using reconciliation::EstimateRequest;
 using reconciliation::Estimation;
 
 using reconciliation::PinSketchReply;
 using reconciliation::PinSketchRequest;
+
+using reconciliation::IbfCell;
+using reconciliation::DDigestReply;
+using reconciliation::DDigestRequest;
+
+using reconciliation::GrapheneReply;
+using reconciliation::GrapheneRequest;
 
 using reconciliation::PbsReply;
 using reconciliation::PbsRequest;
@@ -91,6 +105,108 @@ class EstimationServiceImpl final : public Estimation::Service {
     return Status::OK;
   }
 
+  Status ReconcileGraphene(ServerContext *context, const GrapheneRequest *request,
+                           GrapheneReply *response) override {
+    if (_estimated_diff == -1)
+      return Status(StatusCode::UNAVAILABLE, "Please call Estimate() first");
+    if (_key_value_pairs == nullptr)
+      return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
+
+    auto setbsize = request->m();
+    auto setasize = _key_value_pairs->size();
+    const double DEFAULT_CB = (1.0 - 239.0 / 240);
+    const std::vector<uint8_t> DUMMY_VAL{0};
+    const int VAL_SIZE = 1; // bytes
+    struct search_params params = search_params();
+    bloom_parameters bf_params;
+    double a, fpr_sender, real_fpr_sender;
+    int iblt_rows_first;
+    params.CB_solve_a(setasize /* mempool_size */, setbsize /* blk_size */,
+                      setbsize /* blk_size */, 0, DEFAULT_CB, a, fpr_sender,
+                      iblt_rows_first);
+
+    response->set_a(a);
+    // create an IBLT
+    IBLT iblt_sender_first = IBLT(int(a), VAL_SIZE);
+    bool no_bf = (std::abs(1.0 - fpr_sender) < CONSIDER_TOBE_ZERO);
+    // create a Bloom filter
+    if (!no_bf) {
+      bf_params.projected_element_count = setbsize;
+      bf_params.false_positive_probability = fpr_sender;
+      bf_params.compute_optimal_parameters();
+      bloom_filter bloom_sender = bloom_filter(bf_params);
+      for (const auto& kv : *_key_value_pairs) {
+          bloom_sender.insert(kv.first);
+         iblt_sender_first.insert(kv.first /* key */, DUMMY_VAL /* (dummy) value */);
+      }
+      response->mutable_bf()->resize(bloom_sender.size(), 0);
+      std::copy(bloom_sender.table(), bloom_sender.table() + bloom_sender.size(), response->mutable_bf()->begin());
+    } else {
+      for (const auto& kv : *_key_value_pairs) {
+        iblt_sender_first.insert(kv.first /* key */, DUMMY_VAL /* (dummy) value */);
+      }
+    }
+    auto table = iblt_sender_first.data();
+    for (const auto& cell: table) {
+      auto new_cell = response->mutable_ibf()->Add();
+      new_cell->set_count(cell.count);
+      new_cell->set_keysum(cell.keySum);
+      new_cell->set_keycheck(cell.keyCheck);
+    }
+
+
+    return Status::OK;
+  }
+
+  Status ReconcileDDigest(ServerContext *context, const DDigestRequest *request,
+                          DDigestReply *response) override {
+    if (_estimated_diff == -1)
+      return Status(StatusCode::UNAVAILABLE, "Please call Estimate() first");
+    if (_key_value_pairs == nullptr)
+      return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
+
+    const int VAL_SIZE = 1;  // bytes
+    const std::vector<uint8_t> VAL{0};
+    float HEDGE =
+        2.0;  // use suggested value provided in what's difference paper
+    IBLT my_iblt(_estimated_diff, VAL_SIZE, HEDGE,
+                 (_estimated_diff > 200 ? 3 : 4));
+    for (const auto &kv : *_key_value_pairs) {
+      my_iblt.insert(kv.first, VAL);
+    }
+
+    IBLT other_iblt(_estimated_diff, VAL_SIZE, HEDGE,
+                    (_estimated_diff > 200 ? 3 : 4));
+
+    other_iblt.set(request->cells().cbegin(), request->cells().cend());
+
+    std::set<std::pair<uint64_t, std::vector<uint8_t>>> pos, neg;
+    auto ibltD = my_iblt - other_iblt;
+    bool succeed = ibltD.listEntries(pos, neg);
+
+    response->set_succeed(succeed);
+
+    if (succeed) {
+      for (const auto &key : neg) {
+        Key key_ = static_cast<Key>(key.first);
+        response->mutable_missing_keys()->Add(key_);
+      }
+      for (const auto &key : pos) {
+        Key key_ = static_cast<Key>(key.first);
+        auto kv = response->mutable_pushed_key_values()->Add();
+
+        if (!_key_value_pairs->contains(key_)) {
+          response->set_succeed(false);
+          break;
+        }
+        kv->set_key(key_);
+        kv->set_value((*_key_value_pairs)[key_]);
+      }
+    }
+
+    return Status::OK;
+  }
+
   Status ReconcilePinSketch(ServerContext *context,
                             const PinSketchRequest *request,
                             PinSketchReply *response) override {
@@ -145,7 +261,7 @@ class EstimationServiceImpl final : public Estimation::Service {
             "encoding hint in the first round should be empty!!");
       }
       auto [my_enc_tmp, dummy] = _pbs->encode();
-      (void)dummy; // avoid unused variable warning
+      (void)dummy;  // avoid unused variable warning
       my_enc = my_enc_tmp;
     } else {
       libpbs::PbsEncodingHintMessage hint(_pbs->hint_max_range());
@@ -167,8 +283,9 @@ class EstimationServiceImpl final : public Estimation::Service {
 
     for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
 
-    std::vector<uint64_t > tests;
-    tests.insert(tests.end(), response->xors().cbegin(), response->xors().cend());
+    std::vector<uint64_t> tests;
+    tests.insert(tests.end(), response->xors().cbegin(),
+                 response->xors().cend());
 
     for (auto checksum : checksums)
       *(response->mutable_checksum()->Add()) = checksum;

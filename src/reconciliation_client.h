@@ -1,7 +1,12 @@
 #ifndef RECONCILIATION_CLIENT_H_
 #define RECONCILIATION_CLIENT_H_
 
+#include <fmt/format.h>
 #include <grpcpp/grpcpp.h>
+#include <iblt/iblt.h>
+#include <iblt/utilstrencodings.h>
+#include <iblt/search_params.h>
+#include <bloom/bloom_filter.h>
 #include <random.h>
 #include <tow.h>
 #include <tsl/ordered_map.h>
@@ -19,13 +24,15 @@
 #include "pinsketch.h"
 #include "reconciliation.grpc.pb.h"
 
-#include <fmt/format.h>
-
 using namespace std::chrono_literals;
 
 using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
+
+using reconciliation::SetUpRequest;
+using reconciliation::SetUpReply;
+
 using reconciliation::EstimateReply;
 using reconciliation::EstimateRequest;
 using reconciliation::Estimation;
@@ -33,6 +40,13 @@ using reconciliation::Estimation;
 using reconciliation::KeyValue;
 using reconciliation::PinSketchReply;
 using reconciliation::PinSketchRequest;
+
+using reconciliation::IbfCell;
+using reconciliation::DDigestReply;
+using reconciliation::DDigestRequest;
+
+using reconciliation::GrapheneReply;
+using reconciliation::GrapheneRequest;
 
 using reconciliation::PbsReply;
 using reconciliation::PbsRequest;
@@ -49,7 +63,7 @@ class ReconciliationClient {
       : stub_(Estimation::NewStub(channel)),
         _estimator(DEFAULT_SKETCHES_, DEFAULT_SEED) {}
 
-  template<typename PushKeyIterator, typename PullKeyIterator>
+  template <typename PushKeyIterator, typename PullKeyIterator>
   bool PushAndPull(PushKeyIterator push_first, PushKeyIterator push_last,
                    PullKeyIterator pull_first, PullKeyIterator pull_last,
                    tsl::ordered_map<Key, Value> &key_value_pairs) {
@@ -72,7 +86,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -81,7 +95,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template<typename KeyIterator>
+  template <typename KeyIterator>
   bool Pull(KeyIterator first, KeyIterator last,
             tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -97,7 +111,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -106,7 +120,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template<typename KeyIterator>
+  template <typename KeyIterator>
   bool Push(KeyIterator first, KeyIterator last,
             const tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -124,10 +138,130 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
+    return true;
+  }
+
+  // template<typename Key, typename Value>
+  bool Reconciliation_DDigest(tsl::ordered_map<Key, Value> &key_value_pairs,
+                              ssize_t d = -1) {
+    size_t scaled_d = d;
+    if (d == -1) {
+      auto est = EstimationKeyValuePairs(key_value_pairs.cbegin(),
+                                         key_value_pairs.cend());
+      scaled_d = ESTIMATE_SM99(est);
+    }
+
+    const int VAL_SIZE = 1;  // bytes
+    const std::vector<uint8_t> VAL{0};
+    float HEDGE =
+        2.0;  // use suggested value provided in what's difference paper
+    IBLT my_iblt(scaled_d, VAL_SIZE, HEDGE, (scaled_d > 200 ? 3 : 4));
+
+    for (const auto &kv : key_value_pairs) {
+      my_iblt.insert(kv.first, VAL);
+    }
+    // serialization
+    DDigestRequest request;
+    auto table = my_iblt.data();
+    for (const auto &each_cell : table) {
+      auto cell = request.mutable_cells()->Add();
+      cell->set_count(each_cell.count);
+      cell->set_keysum(each_cell.keySum);
+      cell->set_keycheck(each_cell.keyCheck);
+    }
+
+    DDigestReply reply;
+    // Context for the client. It could be used to convey extra information to
+    // the server and/or tweak certain RPC behaviors.
+    ClientContext context;
+    // The actual RPC.
+    Status status = stub_->ReconcileDDigest(&context, request, &reply);
+    // Act upon its status.
+    if (!status.ok()) {
+      std::cerr << (std::to_string(status.error_code()) + ": " +
+                    status.error_message())
+                << std::endl;
+      return false;
+    }
+    if (!reply.succeed()) return false;
+    for (const auto &kv : reply.pushed_key_values()) {
+      if (key_value_pairs.contains(kv.key())) return false;
+      key_value_pairs.insert({kv.key(), kv.value()});
+    }
+    if (!reply.missing_keys().empty())
+      return Push(reply.missing_keys().cbegin(), reply.missing_keys().cend(),
+                  key_value_pairs);
+    return true;
+  }
+
+  // template<typename Key, typename Value>
+  bool Reconciliation_Graphene(tsl::ordered_map<Key, Value> &key_value_pairs,
+                                ssize_t d = -1) {
+    size_t scaled_d = d;
+    if (d == -1) {
+      auto est = EstimationKeyValuePairs(key_value_pairs.cbegin(),
+                                         key_value_pairs.cend());
+      scaled_d = ESTIMATE_SM99(est);
+    }
+    GrapheneRequest request;
+    request.set_m(key_value_pairs.size());
+
+    GrapheneReply reply;
+    // Context for the client. It could be used to convey extra information to
+    // the server and/or tweak certain RPC behaviors.
+    ClientContext context;
+    // The actual RPC.
+    Status status = stub_->ReconcileGraphene(&context, request, &reply);
+    // Act upon its status.
+    if (!status.ok()) {
+      std::cerr << (std::to_string(status.error_code()) + ": " +
+          status.error_message())
+                << std::endl;
+      return false;
+    }
+
+    const std::vector<uint8_t> DUMMY_VAL{0};
+    const int VAL_SIZE = 1; // bytes
+    auto a = reply.a();
+    std::vector<int> Z;
+    std::vector<int> Z_compl;
+    auto iblt_receiver_first = IBLT(a, VAL_SIZE);
+    bool no_bf = reply.bf().empty();
+    std::unique_ptr<bloom_filter> bloom_sender_ptr; // empty ptr
+    if (!no_bf) {
+      bloom_sender_ptr = std::make_unique<bloom_filter>();
+      bloom_sender_ptr->set(reply.bf().cbegin(), reply.bf().cend());
+        for (const auto& kv : key_value_pairs) {
+          if (bloom_sender_ptr->contains(kv.first))
+            iblt_receiver_first.insert(kv.first, DUMMY_VAL);
+          else
+            Z_compl.push_back(kv.first);
+        }
+    } else {
+      for (const auto& kv : key_value_pairs) {
+        iblt_receiver_first.insert(kv.first, DUMMY_VAL);
+      }
+    }
+
+    auto iblt_sender_first = IBLT(a, VAL_SIZE);
+    iblt_receiver_first.set(reply.ibf().cbegin(),reply.ibf().cend());
+    std::set<std::pair<uint64_t, std::vector<uint8_t>>> pos, neg;
+    // Eppstein subtraction
+    auto ibltT = iblt_receiver_first - iblt_sender_first;
+    bool correct = ibltT.listEntries(pos, neg);
+    if (!correct) return false;
+
+
+    for (const auto &key : pos) {
+      Z_compl.push_back(key.first);
+    }
+
+    Push(Z_compl.begin(), Z_compl.end(), key_value_pairs);
+
     return true;
   }
 
@@ -156,7 +290,7 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-          status.error_message())
+                    status.error_message())
                 << std::endl;
       return false;
     }
@@ -214,15 +348,15 @@ class ReconciliationClient {
         break;
       }
 
-      auto[enc, hint] = _pbs->encode();
+      auto [enc, hint] = _pbs->encode();
 
       PbsRequest request;
       request.mutable_encoding_msg()->resize(enc->serializedSize(), 0);
-      enc->write((uint8_t *) &(*request.mutable_encoding_msg())[0]);
+      enc->write((uint8_t *)&(*request.mutable_encoding_msg())[0]);
 
       if (hint != nullptr) {
         request.mutable_encoding_hint()->resize(hint->serializedSize(), 0);
-        hint->write((uint8_t *) &(*request.mutable_encoding_hint())[0]);
+        hint->write((uint8_t *)&(*request.mutable_encoding_hint())[0]);
       }
 
       if (!res.empty()) {
@@ -247,7 +381,7 @@ class ReconciliationClient {
       // Act upon its status.
       if (!status.ok()) {
         std::cerr << (std::to_string(status.error_code()) + ": " +
-            status.error_message())
+                      status.error_message())
                   << std::endl;
         return false;
       }
@@ -260,8 +394,8 @@ class ReconciliationClient {
       libpbs::PbsDecodingMessage decoding_message(
           _pbs->bchParameterM(), _pbs->bchParameterT(), _pbs->numberOfGroups());
 
-      decoding_message.parse((const uint8_t *) reply.decoding_msg().c_str(), reply.decoding_msg().size());
-
+      decoding_message.parse((const uint8_t *)reply.decoding_msg().c_str(),
+                             reply.decoding_msg().size());
 
       xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
       checksums.insert(checksums.end(), reply.checksum().cbegin(),
@@ -269,14 +403,15 @@ class ReconciliationClient {
       completed = _pbs->decodeCheck(decoding_message, xors, checksums);
       res = _pbs->differencesLastRound();
 
-      fmt::print("Round #{}: {:>6} of {:>6} decoded\n", _pbs->rounds(), res.size(), d);
+      fmt::print("Round #{}: {:>6} of {:>6} decoded\n", _pbs->rounds(),
+                 res.size(), d);
 
     } while (true);
 
     return syn_completed;
   }
 
-  template<typename Iterator>
+  template <typename Iterator>
   float EstimationKeyValuePairs(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply_key_value_pairs(first, last);
     // Data we are sending to the server.
@@ -301,7 +436,7 @@ class ReconciliationClient {
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
-  template<typename Iterator>
+  template <typename Iterator>
   float Estimation(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply(first, last);
     // Data we are sending to the server.

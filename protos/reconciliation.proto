@@ -6,11 +6,47 @@ package reconciliation;
 service Estimation {
     rpc Estimate(EstimateRequest) returns (EstimateReply) {}
 
+    rpc ReconcileSetUp(SetUpRequest) returns (SetUpReply) {}
+
     rpc ReconcilePinSketch(PinSketchRequest) returns (PinSketchReply) {}
+
+    rpc ReconcileDDigest(DDigestRequest) returns (DDigestReply) {}
+
+    rpc ReconcileGraphene(GrapheneRequest) returns (GrapheneReply) {}
 
     rpc ReconcileParityBitmapSketch(PbsRequest) returns (PbsReply) {}
 
     rpc Synchronize(SynchronizeMessage) returns (SynchronizeMessage) {}
+}
+
+// request to setup an experiment
+message SetUpRequest {
+    enum Method {
+        DDigest = 0;
+        PinSketch = 1;
+        Graphene = 2;
+        PBS = 3;
+        END = 4;
+    }
+    // which method to experiment with
+    Method next_algorithm = 1;
+    // seed for generate data
+    uint32 seed = 2;
+    // cardinality of the set difference size
+    uint32 d = 3;
+    // object size
+    uint32 object_sz = 4;
+}
+
+// reply to setup request
+message SetUpReply {
+   // whether the method succeeded in the previous experiment
+   enum PreviousExperimentStatus {
+     NA = 0;
+     SUCCEED = 1;
+     FAILED = 2;
+   }
+   PreviousExperimentStatus status = 1;
 }
 
 // 
@@ -49,6 +85,31 @@ message PbsReply {
     repeated KeyValue pushed_key_values = 4;
 }
 
+message IbfCell {
+   int32 count = 1;
+   uint64 keySum = 2;
+   uint32 keyCheck = 3;
+}
+
+message DDigestRequest {
+   repeated IbfCell cells = 1;
+}
+
+message DDigestReply {
+  bool succeed = 1;
+  repeated int32 missing_keys = 2;
+  repeated KeyValue pushed_key_values = 3;
+}
+
+message GrapheneRequest {
+    uint32 m = 1; // set size
+}
+
+message GrapheneReply {
+    uint32 a = 1;
+    bytes bf = 2;
+    repeated IbfCell ibf = 3;
+}
 
 message KeyValue {
  int32 key = 1;

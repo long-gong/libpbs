@@ -30,6 +30,15 @@ find_package(fmt REQUIRED)
 add_subdirectory(src)
 
 
+##### For DDigest & Graphene ###
+set(ddigest_objs "")
+add_library(murmur_hash OBJECT 3rd/include/iblt/murmurhash3.cpp)
+add_library(utilstrencodings OBJECT 3rd/include/iblt/utilstrencodings.cpp)
+add_library(iblt OBJECT 3rd/include/iblt/iblt.cpp)
+list(APPEND ddigest_objs murmur_hash utilstrencodings iblt)
+
+message(STATUS "DDigest objects: ${ddigest_objs} ...")
+
 ####### TESTS ########
 enable_testing()
 
