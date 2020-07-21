@@ -36,6 +36,8 @@ message SetUpRequest {
     uint32 d = 3;
     // object size
     uint32 object_sz = 4;
+    // union sz
+    uint32 usz = 5;
 }
 
 // reply to setup request

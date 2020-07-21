@@ -37,7 +37,11 @@ namespace {
 constexpr unsigned DEFAULT_MAX_ROUNDS = 3;
 constexpr float DEFAULT_AVG_DIFFS_PER_GROUP = 5;
 constexpr unsigned DEFAULT_NUM_GROUPS_WHEN_BCH_FAIL = 3;
+#ifndef TARGET_SUCCESS_PROB
 constexpr double DEFAULT_TARGET_SUCCESS_PROB = 0.99;
+#else
+constexpr double DEFAULT_TARGET_SUCCESS_PROB = TARGET_SUCCESS_PROB;
+#endif
 
 constexpr uint64_t DEFAULT_SEED_G = 0x6d496e536b65LU;
 constexpr uint64_t SEED_OFFSET = 142857;

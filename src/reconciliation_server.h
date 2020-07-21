@@ -22,6 +22,7 @@
 #include "tow.h"
 #include "xxhash_wrapper.h"
 
+#include "bench_utils.h"
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
@@ -30,6 +31,14 @@ using grpc::StatusCode;
 
 using reconciliation::SetUpRequest;
 using reconciliation::SetUpReply;
+using reconciliation::SetUpRequest_Method_DDigest;
+using reconciliation::SetUpRequest_Method_PinSketch;
+using reconciliation::SetUpRequest_Method_Graphene;
+using reconciliation::SetUpRequest_Method_PBS;
+using reconciliation::SetUpRequest_Method_END;
+using reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED;
+using reconciliation::SetUpReply_PreviousExperimentStatus_FAILED;
+using reconciliation::SetUpReply_PreviousExperimentStatus_NA;
 
 using reconciliation::EstimateReply;
 using reconciliation::EstimateRequest;
@@ -78,6 +87,58 @@ class EstimationServiceImpl final : public Estimation::Service {
     _estimated_diff =
         static_cast<ssize_t>(INFLATION_RATIO * reply->estimated_value());
     return Status::OK;
+  }
+
+  Status ReconcileSetUp(ServerContext *context, const SetUpRequest *request,
+                        SetUpReply *response) override {
+    auto alg = request->next_algorithm();
+    auto d = request->d();
+    auto usz = request->usz();
+    auto seed = request->seed();
+    auto value_size = request->object_sz();
+
+    switch (alg) {
+      SetUpRequest_Method_DDigest:
+      SetUpRequest_Method_PinSketch:
+      {
+        if (_key_value_pairs == nullptr) _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
+        only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(*_key_value_pairs, usz, value_size, seed);
+        response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_NA);
+        return Status::OK;
+      }
+      SetUpRequest_Method_Graphene:
+      SetUpRequest_Method_PBS:
+      {
+        if (_key_value_pairs == nullptr) _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
+        only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(*_key_value_pairs, usz, value_size, seed);
+        for (auto it = _key_value_pairs->begin();it != _key_value_pairs->end();++ it)
+          _key_value_pairs->erase(it);
+        response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_NA);
+        return Status::OK;
+      }
+      SetUpRequest_Method_END:
+      {
+        if (_key_value_pairs == nullptr) {
+          response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
+        } else {
+          tsl::ordered_map<Key, Value> ground_truth;
+          only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(ground_truth,
+                                                                                       usz,
+                                                                                       value_size,
+                                                                                       seed);
+          if (only_for_benchmark::is_equal(*_key_value_pairs, ground_truth)) {
+            response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED);
+          } else {
+            response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
+          }
+          _key_value_pairs->clear();
+        }
+        return Status::OK;
+      }
+      default:
+        return Status::OK;
+    }
+
   }
 
   Status Synchronize(ServerContext *context, const SynchronizeMessage *request,
@@ -131,7 +192,7 @@ class EstimationServiceImpl final : public Estimation::Service {
     bool no_bf = (std::abs(1.0 - fpr_sender) < CONSIDER_TOBE_ZERO);
     // create a Bloom filter
     if (!no_bf) {
-      bf_params.projected_element_count = (setbsize == 0? 1: setbsize);
+      bf_params.projected_element_count = (setbsize == 0 ? 1 : setbsize);
       bf_params.false_positive_probability = fpr_sender;
       bf_params.compute_optimal_parameters();
       bloom_filter bloom_sender = bloom_filter(bf_params);
