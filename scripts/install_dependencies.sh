@@ -80,6 +80,14 @@ cd minisketch
 make -j && make install
 cd /tmp && rm -rf minisketch
 
+cd /tmp && rm -rf CLI11
+git clone https://github.com/CLIUtils/CLI11.git
+git submodule update --init
+cd CLI11 && mkdir build && cd build
+cmake .. -DCMAKE_INSTALL_PREFIX=${install_dir}
+make -j && make install
+cd /tmp && rm -rf CLI11
+
 echo "DONE!"
 
 

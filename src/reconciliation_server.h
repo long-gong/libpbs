@@ -98,25 +98,27 @@ class EstimationServiceImpl final : public Estimation::Service {
     auto value_size = request->object_sz();
 
     switch (alg) {
-      SetUpRequest_Method_DDigest:
-      SetUpRequest_Method_PinSketch:
+      case SetUpRequest_Method_DDigest:
+      case SetUpRequest_Method_PinSketch:
       {
         if (_key_value_pairs == nullptr) _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
         only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(*_key_value_pairs, usz, value_size, seed);
+        LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(), _key_value_pairs->cend());
         response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_NA);
         return Status::OK;
       }
-      SetUpRequest_Method_Graphene:
-      SetUpRequest_Method_PBS:
+      case SetUpRequest_Method_Graphene:
+      case SetUpRequest_Method_PBS:
       {
         if (_key_value_pairs == nullptr) _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
         only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(*_key_value_pairs, usz, value_size, seed);
-        for (auto it = _key_value_pairs->begin();it != _key_value_pairs->end();++ it)
+        for (auto it = _key_value_pairs->begin();it != _key_value_pairs->begin() + d;++ it)
           _key_value_pairs->erase(it);
+        LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(), _key_value_pairs->cend());
         response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_NA);
         return Status::OK;
       }
-      SetUpRequest_Method_END:
+      case SetUpRequest_Method_END:
       {
         if (_key_value_pairs == nullptr) {
           response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
@@ -217,7 +219,6 @@ class EstimationServiceImpl final : public Estimation::Service {
       new_cell->set_keysum(cell.keySum);
       new_cell->set_keycheck(cell.keyCheck);
     }
-
     return Status::OK;
   }
 

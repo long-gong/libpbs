@@ -16,15 +16,7 @@
 // TODO: change to boost::cache
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
-#if __cplusplus >= 201703L
-/* Now remove the trow */
-#define throw( \
-    ...)  //  error: ISO C++1z does not allow dynamic exception specifications
 #include <stlcache/stlcache.hpp>
-#undef throw /* reset */
-#else
-#include <stlcache/stlcache.hpp>
-#endif
 #pragma GCC diagnostic pop
 
 #define YELLOW "\033[33m" /* Yellow */
@@ -105,7 +97,7 @@ inline void memcache_clear() {
 inline std::string get_cache_filename(const key_t& key) {
   make_sure_cache_dir_exists();
   return std::string(DEFAULT_CACHE_DIR) +
-         fmt::format(cache_file_pat_, key[0], key[1], key[2], key[3]);
+      fmt::format(cache_file_pat_, key[0], key[1], key[2], key[3]);
 }
 
 /**

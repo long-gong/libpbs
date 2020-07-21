@@ -1,0 +1,1 @@
+/usr/bin/c++  -O3 -fPIC -Wall -O3 -DNDEBUG   -Wl,-rpath -Wl,3rd/lib -rdynamic CMakeFiles/test_pbs_messages.dir/__/test/test_pbs_messages.cpp.o  -o test_pbs_messages -lminisketch /usr/local/lib/libgtest.a /usr/local/lib/libgtest_main.a /usr/local/lib/libfmt.a /usr/local/lib/libgtest.a -lpthread 

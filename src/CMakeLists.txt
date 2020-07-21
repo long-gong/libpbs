@@ -40,10 +40,10 @@ add_library(grpc_obj OBJECT IMPORTED grpc_srcs)
 SET(CMAKE_EXE_LINKER_FLAGS
         "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath -Wl,${THIRD_PARTY}/lib")
 
-add_executable(server "reconciliation_server.cpp" ${proto_obj} ${grpc_obj}
+add_executable(server "reconciliation_server.cpp"
         ${proto_srcs}
-        ${grpc_srcs})
-message("${GRPCPP_INCLUDE_DIRS} | ${GRPCPP_LIBRARIES}")
+        ${grpc_srcs}
+        ${ddigest_objs})
 target_include_directories(server
         PRIVATE
         ${GRPCPP_INCLUDE_DIRS})
@@ -51,19 +51,33 @@ target_link_libraries(server
         gRPC::grpc++ gRPC::grpc++_reflection
         ${_PROTOBUF_LIBPROTOBUF}
         xxhash
-        minisketch)
+        minisketch
+        GTest::GTest
+        GTest::Main
+        Boost::serialization
+        Boost::filesystem
+        Eigen3::Eigen
+        fmt::fmt)
 
-add_executable(client "reconciliation_client.cpp" ${proto_obj} ${grpc_obj}
+add_executable(client "reconciliation_client.cpp"
         ${proto_srcs}
-        ${grpc_srcs})
+        ${grpc_srcs}
+        ${ddigest_objs})
 target_include_directories(client
         PRIVATE
-        ${GRPCPP_INCLUDE_DIRS})
+        ${GRPCPP_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(client
         gRPC::grpc++ gRPC::grpc++_reflection
         ${_PROTOBUF_LIBPROTOBUF}
         xxhash
-        minisketch)
+        minisketch
+        GTest::GTest
+        GTest::Main
+        Boost::serialization
+        Boost::filesystem
+        Eigen3::Eigen
+        fmt::fmt)
 
 ## TESTS ##
 enable_testing()
@@ -95,7 +109,7 @@ target_link_libraries(test_pbs
 configure_file(../3rd/include/iblt/param.export.0.995833.2018-07-17.csv ${CMAKE_CURRENT_BINARY_DIR}/param.export.0.995833333333333.2018-07-12.csv
         COPYONLY)
 message("DDigest: ${ddigest_objs}")
-add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp" ${proto_obj} ${grpc_obj}
+add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp"
         ${proto_srcs}
         ${grpc_srcs}
         ${ddigest_objs})
@@ -121,3 +135,7 @@ target_link_libraries(test_bench_utils
         GTest::GTest
         GTest::Main
         fmt::fmt)
+
+
+add_executable(test_cli11 ../test/test_cli11.cpp)
+target_link_libraries(test_cli11 fmt::fmt)
