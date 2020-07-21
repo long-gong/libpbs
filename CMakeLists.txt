@@ -27,17 +27,24 @@ find_package(Eigen3 REQUIRED)
 find_package(GTest REQUIRED)
 find_package(fmt REQUIRED)
 
-add_subdirectory(src)
-
-
 ##### For DDigest & Graphene ###
 set(ddigest_objs "")
 add_library(murmur_hash OBJECT 3rd/include/iblt/murmurhash3.cpp)
 add_library(utilstrencodings OBJECT 3rd/include/iblt/utilstrencodings.cpp)
 add_library(iblt OBJECT 3rd/include/iblt/iblt.cpp)
-list(APPEND ddigest_objs murmur_hash utilstrencodings iblt)
+list(APPEND ddigest_objs $<TARGET_OBJECTS:murmur_hash> $<TARGET_OBJECTS:utilstrencodings> $<TARGET_OBJECTS:iblt>)
+
+SET_SOURCE_FILES_PROPERTIES(
+        ${ddigest_objs}
+        PROPERTIES
+        EXTERNAL_OBJECT true
+        GENERATED true
+)
 
 message(STATUS "DDigest objects: ${ddigest_objs} ...")
+
+#### MORE SRCs ####
+add_subdirectory(src)
 
 ####### TESTS ########
 enable_testing()
@@ -66,3 +73,18 @@ target_link_libraries(
         Boost::filesystem
         Eigen3::Eigen
         fmt::fmt)
+
+add_executable(test_bloom_serialization test/test_bloom_serialization.cpp)
+target_link_libraries(
+        test_bloom_serialization
+        GTest::GTest
+        GTest::Main
+)
+
+add_executable(test_ibf_serialization test/test_ibf_serialization.cpp ${ddigest_objs})
+#add_dependencies(test_ibf_serialization ${ddigest_objs})
+target_link_libraries(
+        test_ibf_serialization
+        GTest::GTest
+        GTest::Main
+)

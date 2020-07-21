@@ -11,6 +11,8 @@ std::promise<void> exit_estimation_service;
 std::promise<void> exit_pinsketch_service;
 std::promise<void> exit_push_pull_service;
 std::promise<void> exit_pbs_service;
+std::promise<void> exit_ddigest_service;
+std::promise<void> exit_graphene_service;
 
 void stop_estimation_service() { exit_estimation_service.set_value(); }
 
@@ -21,6 +23,14 @@ void reset_pinsketch_service() {
 void stop_pbs_service() { exit_pbs_service.set_value(); }
 void reset_pbs_service() {
   exit_pbs_service = std::promise<void>();
+}
+void stop_ddigest_service() { exit_ddigest_service.set_value();}
+void reset_ddigest_service() {
+  exit_ddigest_service = std::promise<void>();
+}
+void stop_graphene_service() { exit_graphene_service.set_value(); }
+void reset_graphene_service() {
+  exit_graphene_service = std::promise<void>();
 }
 void stop_push_pull_service() { exit_push_pull_service.set_value(); }
 
@@ -90,6 +100,75 @@ void run_server_for_testing_pinsketch_service() {
   serving_thread.join();
 }
 
+void run_server_for_testing_ddigest_service() {
+  std::string server_address("0.0.0.0:50051");
+  EstimationServiceImpl service;
+
+  auto server_data_ptr = std::make_shared<tsl::ordered_map<Key, Value>>(
+      tsl::ordered_map<Key, Value>{
+          {4, "4444"}, {6, "666666"}, {3, "333"}, {5, "55555"}});
+
+  service.set_key_value_pairs(server_data_ptr);
+  service.set_estimated_diff(4);
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server (testing ddigest service) listening on "
+            << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  auto serveFn = [&]() { server->Wait(); };
+
+  std::thread serving_thread(serveFn);
+  auto f = exit_ddigest_service.get_future();
+  f.wait();
+  server->Shutdown();
+  serving_thread.join();
+}
+
+void run_server_for_testing_graphene_service() {
+  std::string server_address("0.0.0.0:50051");
+  EstimationServiceImpl service;
+
+  auto server_data_ptr = std::make_shared<tsl::ordered_map<Key, Value>>(
+      tsl::ordered_map<Key, Value>{
+           {4, "4444"}, {6, "666666"}, {3, "333"}, {5, "55555"}});
+
+  service.set_key_value_pairs(server_data_ptr);
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server (testing graphene service) listening on "
+            << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  auto serveFn = [&]() { server->Wait(); };
+
+  std::thread serving_thread(serveFn);
+  auto f = exit_graphene_service.get_future();
+  f.wait();
+  server->Shutdown();
+  serving_thread.join();
+}
+
 void run_server_for_testing_pbs_service() {
   std::string server_address("0.0.0.0:50051");
   EstimationServiceImpl service;
@@ -129,6 +208,10 @@ void run_server_for_testing_pinsketch_service_large_scale(size_t d, uint32_t sta
 void DoPinSketchServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
 void run_server_for_testing_pbs_service_large_scale(size_t d, uint32_t start, unsigned seed);
 void DoParityBitmapSketchServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
+void run_server_for_testing_ddigest_service_large_scale(size_t d, uint32_t start, unsigned seed);
+void DoDDigestServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
+void run_server_for_testing_graphene_service_large_scale(size_t d, uint32_t start, unsigned seed);
+void DoGrapheneServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
 
 void run_server_for_testing_push_pull_service() {
   std::string server_address("0.0.0.0:50051");
@@ -250,6 +333,76 @@ TEST(ReconciliationServicesTest, ParityBitmapSketchServiceLargeScale) {
     DoParityBitmapSketchServiceLargeScale(d);
 }
 
+TEST(ReconciliationServicesTest, DDigestService) {
+  std::thread th_run_server(run_server_for_testing_ddigest_service);
+  std::this_thread::sleep_for(
+      1s);  // make sure server is ready when client calls
+  {
+    // start a client
+    std::string target_str = "localhost:50051";
+    ReconciliationClient client(
+        grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+    tsl::ordered_map<Key, Value> client_data{
+        {1, "1"}, {2, "22"}, {3, "333"}, {5, "55555"}};
+    tsl::ordered_map<Key, Value> expected{{1, "1"},    {2, "22"},
+                                          {3, "333"},  {5, "55555"},
+                                          {4, "4444"}, {6, "666666"}};
+    EXPECT_TRUE(client.Reconciliation_DDigest(client_data, 4));
+
+    EXPECT_EQ(expected.size(), client_data.size());
+    for (const auto& kv: expected) {
+      EXPECT_TRUE(client_data.count(kv.first) > 0);
+      EXPECT_EQ(kv.second, client_data.at(kv.first));
+    }
+
+  }
+
+  stop_ddigest_service();
+  th_run_server.join();
+}
+
+TEST(ReconciliationServicesTest, GrapheneService) {
+  std::thread th_run_server(run_server_for_testing_graphene_service);
+  std::this_thread::sleep_for(
+      1s);  // make sure server is ready when client calls
+  {
+    // start a client
+    std::string target_str = "localhost:50051";
+    ReconciliationClient client(
+        grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+    tsl::ordered_map<Key, Value> client_data{
+        {1, "1"},    {2, "22"},
+        {3, "333"},  {5, "55555"},
+        {4, "4444"}, {6, "666666"}};
+
+    EXPECT_TRUE(client.Reconciliation_Graphene(client_data));
+
+    std::vector<Key> pull_keys{1,2};
+    tsl::ordered_map<Key, Value> expected{{1, "1"},    {2, "22"}};
+    tsl::ordered_map<Key, Value> obtained;
+    client.Pull(pull_keys.begin(), pull_keys.end(), obtained);
+    for (const auto& kv: expected) {
+      EXPECT_TRUE(client_data.count(kv.first) > 0);
+      EXPECT_EQ(kv.second, obtained.at(kv.first));
+    }
+
+  }
+
+  stop_graphene_service();
+  th_run_server.join();
+}
+
+TEST(ReconciliationServicesTest, GrapheneServiceLargeScale) {
+//  DoGrapheneServiceLargeScale(100);
+  for (auto d: {100, 1000, 10000, 100000})
+    DoGrapheneServiceLargeScale(d);
+}
+
+TEST(ReconciliationServicesTest, DDigestServiceLargeScale) {
+  for (auto d: {100, 1000, 10000})
+    DoDDigestServiceLargeScale(d);
+}
+
 TEST(ReconciliationServicesTest, PushPullService) {
   std::thread th_run_server(run_server_for_testing_push_pull_service);
   // make sure server is ready when client calls
@@ -311,6 +464,124 @@ generateKeyValuePairs(size_t d, uint32_t start, unsigned seed=202007u) {
   }
 
   return server_data_ptr;
+}
+
+void run_server_for_testing_graphene_service_large_scale(size_t d, uint32_t start, unsigned seed) {
+  std::string server_address("0.0.0.0:50051");
+  EstimationServiceImpl service;
+
+  auto server_data_ptr = generateKeyValuePairs(0, start, seed);
+  service.set_key_value_pairs(server_data_ptr);
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server (testing graphene service large scale) listening on " << server_address
+            << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  auto serveFn = [&]() { server->Wait(); };
+
+  std::thread serving_thread(serveFn);
+  auto f = exit_graphene_service.get_future();
+  f.wait();
+  server->Shutdown();
+  serving_thread.join();
+}
+
+void DoGrapheneServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
+  reset_graphene_service();
+  std::thread th_run_server(run_server_for_testing_graphene_service_large_scale, d, start, seed);
+  // make sure server is ready when client calls
+  std::this_thread::sleep_for(1s);
+  {
+    // start a client
+    std::string target_str = "localhost:50051";
+    ReconciliationClient client(
+        grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+    tsl::ordered_map<Key, Value> client_data;
+    std::shared_ptr<tsl::ordered_map<Key, Value>> expected = generateKeyValuePairs(d, start, seed);
+    client_data = *expected;
+    auto succeed = client.Reconciliation_Graphene(client_data);
+    EXPECT_TRUE(succeed);
+    std::vector<Key> pulled_keys;
+    tsl::ordered_map<Key, Value> obtained;
+    for (const auto& kv: client_data) pulled_keys.push_back(kv.first);
+    client.Pull(pulled_keys.cbegin(), pulled_keys.cend(), obtained);
+    EXPECT_EQ(expected->size(), obtained.size());
+    for (const auto& kv: *expected) {
+      EXPECT_TRUE(obtained.count(kv.first) > 0);
+      EXPECT_EQ(kv.second, obtained.at(kv.first));
+    }
+  }
+
+  stop_graphene_service();
+  th_run_server.join();
+}
+
+void run_server_for_testing_ddigest_service_large_scale(size_t d, uint32_t start, unsigned seed) {
+  std::string server_address("0.0.0.0:50051");
+  EstimationServiceImpl service;
+
+  auto server_data_ptr = generateKeyValuePairs(d, start, seed);
+  service.set_key_value_pairs(server_data_ptr);
+  service.set_estimated_diff(d);
+
+  grpc::EnableDefaultHealthCheckService(true);
+  grpc::reflection::InitProtoReflectionServerBuilderPlugin();
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server (testing ddigest service large scale) listening on " << server_address
+            << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  auto serveFn = [&]() { server->Wait(); };
+
+  std::thread serving_thread(serveFn);
+  auto f = exit_ddigest_service.get_future();
+  f.wait();
+  server->Shutdown();
+  serving_thread.join();
+}
+
+void DoDDigestServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
+  reset_ddigest_service();
+  std::thread th_run_server(run_server_for_testing_ddigest_service_large_scale, d, start, seed);
+  // make sure server is ready when client calls
+  std::this_thread::sleep_for(1s);
+  {
+    // start a client
+    std::string target_str = "localhost:50051";
+    ReconciliationClient client(
+        grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+    tsl::ordered_map<Key, Value> client_data;
+    std::shared_ptr<tsl::ordered_map<Key, Value>> expected = generateKeyValuePairs(d, start, seed);
+    auto succeed = client.Reconciliation_PinSketch(client_data, d);
+    EXPECT_TRUE(succeed);
+    EXPECT_EQ(expected->size(), client_data.size());
+    for (const auto& kv: *expected) {
+      EXPECT_TRUE(client_data.count(kv.first) > 0);
+      EXPECT_EQ(kv.second, client_data.at(kv.first));
+    }
+  }
+
+  stop_ddigest_service();
+  th_run_server.join();
 }
 
 void run_server_for_testing_pinsketch_service_large_scale(size_t d, uint32_t start, unsigned seed) {

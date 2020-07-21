@@ -107,53 +107,55 @@ class EstimationServiceImpl final : public Estimation::Service {
 
   Status ReconcileGraphene(ServerContext *context, const GrapheneRequest *request,
                            GrapheneReply *response) override {
-    if (_estimated_diff == -1)
-      return Status(StatusCode::UNAVAILABLE, "Please call Estimate() first");
     if (_key_value_pairs == nullptr)
       return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
 
-    auto setbsize = request->m();
-    auto setasize = _key_value_pairs->size();
+    auto setasize = request->m();
+    auto setbsize = _key_value_pairs->size();
     const double DEFAULT_CB = (1.0 - 239.0 / 240);
     const std::vector<uint8_t> DUMMY_VAL{0};
     const int VAL_SIZE = 1; // bytes
-    struct search_params params = search_params();
+    struct search_params params;
     bloom_parameters bf_params;
-    double a, fpr_sender, real_fpr_sender;
+    double a, fpr_sender;
     int iblt_rows_first;
     params.CB_solve_a(setasize /* mempool_size */, setbsize /* blk_size */,
                       setbsize /* blk_size */, 0, DEFAULT_CB, a, fpr_sender,
                       iblt_rows_first);
+    a = std::ceil(a);
 
-    response->set_a(a);
+    response->set_a(int(a));
     // create an IBLT
     IBLT iblt_sender_first = IBLT(int(a), VAL_SIZE);
+
     bool no_bf = (std::abs(1.0 - fpr_sender) < CONSIDER_TOBE_ZERO);
     // create a Bloom filter
     if (!no_bf) {
-      bf_params.projected_element_count = setbsize;
+      bf_params.projected_element_count = (setbsize == 0? 1: setbsize);
       bf_params.false_positive_probability = fpr_sender;
       bf_params.compute_optimal_parameters();
       bloom_filter bloom_sender = bloom_filter(bf_params);
-      for (const auto& kv : *_key_value_pairs) {
-          bloom_sender.insert(kv.first);
-         iblt_sender_first.insert(kv.first /* key */, DUMMY_VAL /* (dummy) value */);
+      for (const auto &kv : *_key_value_pairs) {
+        bloom_sender.insert(kv.first);
+        iblt_sender_first.insert(kv.first /* key */, DUMMY_VAL /* (dummy) value */);
       }
-      response->mutable_bf()->resize(bloom_sender.size(), 0);
-      std::copy(bloom_sender.table(), bloom_sender.table() + bloom_sender.size(), response->mutable_bf()->begin());
+      auto ssz = bloom_sender.size() / 8;
+      response->mutable_bf()->resize(ssz, 0);
+      std::copy(bloom_sender.table(), bloom_sender.table() + ssz, response->mutable_bf()->begin());
+      response->set_n(bf_params.projected_element_count);
+      response->set_fpr(fpr_sender);
     } else {
-      for (const auto& kv : *_key_value_pairs) {
+      for (const auto &kv : *_key_value_pairs) {
         iblt_sender_first.insert(kv.first /* key */, DUMMY_VAL /* (dummy) value */);
       }
     }
     auto table = iblt_sender_first.data();
-    for (const auto& cell: table) {
+    for (const auto &cell: table) {
       auto new_cell = response->mutable_ibf()->Add();
       new_cell->set_count(cell.count);
       new_cell->set_keysum(cell.keySum);
       new_cell->set_keycheck(cell.keyCheck);
     }
-
 
     return Status::OK;
   }
@@ -178,7 +180,12 @@ class EstimationServiceImpl final : public Estimation::Service {
     IBLT other_iblt(_estimated_diff, VAL_SIZE, HEDGE,
                     (_estimated_diff > 200 ? 3 : 4));
 
-    other_iblt.set(request->cells().cbegin(), request->cells().cend());
+    using my_iterator_t = decltype(request->cells().cbegin());
+    other_iblt.set(request->cells().cbegin(),
+                   request->cells().cend(),
+                   [](my_iterator_t it) { return it->count(); },
+                   [](my_iterator_t it) { return it->keysum(); },
+                   [](my_iterator_t it) { return it->keycheck(); });
 
     std::set<std::pair<uint64_t, std::vector<uint8_t>>> pos, neg;
     auto ibltD = my_iblt - other_iblt;
@@ -221,7 +228,7 @@ class EstimationServiceImpl final : public Estimation::Service {
 
     std::vector<uint64_t> differences;
     bool succeed =
-        ps.decode((unsigned char *)&(request->sketch()[0]), differences);
+        ps.decode((unsigned char *) &(request->sketch()[0]), differences);
     if (!succeed) {
       // do something
     }
@@ -260,26 +267,26 @@ class EstimationServiceImpl final : public Estimation::Service {
         throw std::runtime_error(
             "encoding hint in the first round should be empty!!");
       }
-      auto [my_enc_tmp, dummy] = _pbs->encode();
-      (void)dummy;  // avoid unused variable warning
+      auto[my_enc_tmp, dummy] = _pbs->encode();
+      (void) dummy;  // avoid unused variable warning
       my_enc = my_enc_tmp;
     } else {
       libpbs::PbsEncodingHintMessage hint(_pbs->hint_max_range());
-      hint.parse((const uint8_t *)request->encoding_hint().c_str(),
+      hint.parse((const uint8_t *) request->encoding_hint().c_str(),
                  request->encoding_hint().size());
       my_enc = _pbs->encodeWithHint(hint);
     }
 
     libpbs::PbsEncodingMessage other_enc(my_enc->field_sz, my_enc->capacity,
                                          my_enc->num_groups);
-    other_enc.parse((const uint8_t *)request->encoding_msg().c_str(),
+    other_enc.parse((const uint8_t *) request->encoding_msg().c_str(),
                     request->encoding_msg().size());
     auto decoding_msg = _pbs->decode(other_enc, xors, checksums);
 
     auto ssz = decoding_msg->serializedSize();
     response->mutable_decoding_msg()->resize(ssz, 0);
 
-    decoding_msg->write((uint8_t *)&(*response->mutable_decoding_msg())[0]);
+    decoding_msg->write((uint8_t *) &(*response->mutable_decoding_msg())[0]);
 
     for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
 
@@ -331,12 +338,12 @@ class EstimationServiceImpl final : public Estimation::Service {
     return _key_value_pairs.get();
   }
 
-  template <typename Iterator>
+  template<typename Iterator>
   void LocalSketchFor(Iterator first, Iterator last) {
     _sketches = _estimator.apply(first, last);
   }
 
-  template <typename Iterator>
+  template<typename Iterator>
   void LocalSketchForKeyValuePairs(Iterator first, Iterator last) {
     _sketches = _estimator.apply_key_value_pairs(first, last);
   }

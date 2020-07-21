@@ -94,6 +94,7 @@ target_link_libraries(test_pbs
 # avoid to change source code
 configure_file(../3rd/include/iblt/param.export.0.995833.2018-07-17.csv ${CMAKE_CURRENT_BINARY_DIR}/param.export.0.995833333333333.2018-07-12.csv
         COPYONLY )
+message("DDigest: ${ddigest_objs}")
 add_executable(test_reconciliation_services "../test/test_reconciliation_services.cpp" ${proto_obj} ${grpc_obj}
         ${proto_srcs}
         ${grpc_srcs}
