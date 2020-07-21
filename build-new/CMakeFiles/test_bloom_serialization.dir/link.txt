@@ -1,1 +1,0 @@
-/usr/bin/c++  -O3 -fPIC -Wall -O3 -DNDEBUG  -rdynamic CMakeFiles/test_bloom_serialization.dir/test/test_bloom_serialization.cpp.o  -o test_bloom_serialization /usr/local/lib/libgtest.a /usr/local/lib/libgtest_main.a /usr/local/lib/libgtest.a -lpthread 
