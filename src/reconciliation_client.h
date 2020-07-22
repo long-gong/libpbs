@@ -350,7 +350,6 @@ class ReconciliationClient {
       for (size_t tid = 0; tid < repeats; ++tid) {
         auto seed = distribution(gen);
 
-        //        fmt::print("tes = {}, seed = {}\n", tid, seed);
         auto succeed = SetUp_DDigest(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "DDigest",
                            (succeed ? 1 : 0), completed_time, seed, value_sz, d,
@@ -367,7 +366,6 @@ class ReconciliationClient {
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                    _estimate_bk);
         completed_time = 0;
-        std::this_thread::sleep_for(30ms);
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
                            (succeed ? 1 : 0), completed_time, seed, value_sz, d,
@@ -640,9 +638,9 @@ class ReconciliationClient {
         completed = _pbs->decodeCheck(decoding_message, xors, checksums);
       } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
-        fmt::print("DumpInfo: m {}, t {}, est_d {}, number of groups {}, response: {}\n",
+        fmt::print("DumpInfo: m {}, t {}, est_d {}, number of groups {}, # of rounds: {}, response: {}\n",
                    _pbs->bchParameterM(), _pbs->bchParameterT(), scaled_d,
-                   _pbs->numberOfGroups(),
+                   _pbs->numberOfGroups(), _pbs->rounds(),
                    fmt::join(reply.checksum().cbegin(), reply.checksum().cend(),
                              " "));
         exit(1);
