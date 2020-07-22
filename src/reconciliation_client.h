@@ -295,6 +295,15 @@ class ReconciliationClient {
     only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
                                               Key>(key_value_pairs, usz,
                                                    value_sz, exp_seed);
+    // for debugging
+    if (exp_seed == 1406943807) {
+      std::ofstream os("data.txt");
+      for (const auto& kv: key_value_pairs) {
+        os << kv.first << " " << kv.second << "\n";
+      }
+      os.close();
+    }
+
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
     timer.restart();
