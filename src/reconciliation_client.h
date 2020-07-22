@@ -367,6 +367,7 @@ class ReconciliationClient {
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                    _estimate_bk);
         completed_time = 0;
+        std::this_thread::sleep_for(30ms);
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
                            (succeed ? 1 : 0), completed_time, seed, value_sz, d,

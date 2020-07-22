@@ -388,18 +388,18 @@ class EstimationServiceImpl final : public Estimation::Service {
     for (auto checksum : checksums)
       *(response->mutable_checksum()->Add()) = checksum;
 
-    if (decoding_msg->num_groups == 1) {
-      fmt::print(
-          "decoding message:\n\t# of diffs: {}\n\tdiffs: {}\n\tchecksum: "
-          "{}\n\tresponse: {}\n",
-          fmt::join(decoding_msg->decoded_num_differences.cbegin(),
-                    decoding_msg->decoded_num_differences.end(), " "),
-          fmt::join(decoding_msg->decoded_differences.cbegin(),
-                    decoding_msg->decoded_differences.cend(), " "),
-          fmt::join(checksums.cbegin(), checksums.cend(), " "),
-          fmt::join(response->checksum().cbegin(), response->checksum().cend(),
-                    " "));
-    }
+//    if (decoding_msg->num_groups == 1) {
+//      fmt::print(
+//          "decoding message:\n\t# of diffs: {}\n\tdiffs: {}\n\tchecksum: "
+//          "{}\n\tresponse: {}\n",
+//          fmt::join(decoding_msg->decoded_num_differences.cbegin(),
+//                    decoding_msg->decoded_num_differences.end(), " "),
+//          fmt::join(decoding_msg->decoded_differences.cbegin(),
+//                    decoding_msg->decoded_differences.cend(), " "),
+//          fmt::join(checksums.cbegin(), checksums.cend(), " "),
+//          fmt::join(response->checksum().cbegin(), response->checksum().cend(),
+//                    " "));
+//    }
 
     if (!request->pushed_key_values().empty()) {
       for (const auto &kv : request->pushed_key_values()) {
