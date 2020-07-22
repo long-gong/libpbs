@@ -1,13 +1,13 @@
 #ifndef RECONCILIATION_SERVER_H_
 #define RECONCILIATION_SERVER_H_
 
+#include <bloom/bloom_filter.h>
 #include <grpcpp/ext/proto_server_reflection_plugin.h>
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/health_check_service_interface.h>
 #include <iblt/iblt.h>
-#include <iblt/utilstrencodings.h>
 #include <iblt/search_params.h>
-#include <bloom/bloom_filter.h>
+#include <iblt/utilstrencodings.h>
 #include <tsl/ordered_map.h>
 #include <tsl/ordered_set.h>
 
@@ -16,29 +16,28 @@
 #include <string>
 #include <thread>
 
+#include "bench_utils.h"
 #include "pbs.h"
 #include "pinsketch.h"
 #include "reconciliation.grpc.pb.h"
 #include "tow.h"
 #include "xxhash_wrapper.h"
-
-#include "bench_utils.h"
 using grpc::Server;
 using grpc::ServerBuilder;
 using grpc::ServerContext;
 using grpc::Status;
 using grpc::StatusCode;
 
-using reconciliation::SetUpRequest;
 using reconciliation::SetUpReply;
-using reconciliation::SetUpRequest_Method_DDigest;
-using reconciliation::SetUpRequest_Method_PinSketch;
-using reconciliation::SetUpRequest_Method_Graphene;
-using reconciliation::SetUpRequest_Method_PBS;
-using reconciliation::SetUpRequest_Method_END;
-using reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED;
 using reconciliation::SetUpReply_PreviousExperimentStatus_FAILED;
 using reconciliation::SetUpReply_PreviousExperimentStatus_NA;
+using reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED;
+using reconciliation::SetUpRequest;
+using reconciliation::SetUpRequest_Method_DDigest;
+using reconciliation::SetUpRequest_Method_END;
+using reconciliation::SetUpRequest_Method_Graphene;
+using reconciliation::SetUpRequest_Method_PBS;
+using reconciliation::SetUpRequest_Method_PinSketch;
 
 using reconciliation::EstimateReply;
 using reconciliation::EstimateRequest;
@@ -47,9 +46,9 @@ using reconciliation::Estimation;
 using reconciliation::PinSketchReply;
 using reconciliation::PinSketchRequest;
 
-using reconciliation::IbfCell;
 using reconciliation::DDigestReply;
 using reconciliation::DDigestRequest;
+using reconciliation::IbfCell;
 
 using reconciliation::GrapheneReply;
 using reconciliation::GrapheneRequest;
@@ -85,7 +84,7 @@ class EstimationServiceImpl final : public Estimation::Service {
         static_cast<float>(d / _estimator.num_sketches()));
 
     _estimated_diff =
-        static_cast<ssize_t>(INFLATION_RATIO * reply->estimated_value());
+        ESTIMATE_SM99(reply->estimated_value());
     return Status::OK;
   }
 
@@ -97,41 +96,67 @@ class EstimationServiceImpl final : public Estimation::Service {
     auto seed = request->seed();
     auto value_size = request->object_sz();
 
+    fmt::print("Got a SetUp request: {}, {}, {}, {}, {}\n", alg, d, usz, seed,
+               value_size);
+
     switch (alg) {
       case SetUpRequest_Method_DDigest:
-      case SetUpRequest_Method_PinSketch:
-      {
-        if (_key_value_pairs == nullptr) _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
-        only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(*_key_value_pairs, usz, value_size, seed);
-        LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(), _key_value_pairs->cend());
-        response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_NA);
+      case SetUpRequest_Method_PinSketch: {
+        if (_key_value_pairs == nullptr)
+          _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
+
+        fmt::print("{} ... ", "Generate key value pairs");
+        _key_value_pairs->clear();
+        only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                                  Key>(*_key_value_pairs, usz,
+                                                       value_size, seed);
+        fmt::print("{}\n", "done");
+        fmt::print("{} ... ", "Calculate tow sketches");
+        LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(),
+                                    _key_value_pairs->cend());
+        fmt::print("{}\n", "done");
+        response->set_status(
+            reconciliation::SetUpReply_PreviousExperimentStatus_NA);
         return Status::OK;
       }
       case SetUpRequest_Method_Graphene:
-      case SetUpRequest_Method_PBS:
-      {
-        if (_key_value_pairs == nullptr) _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
-        only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(*_key_value_pairs, usz, value_size, seed);
-        for (auto it = _key_value_pairs->begin();it != _key_value_pairs->begin() + d;++ it)
-          _key_value_pairs->erase(it);
-        LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(), _key_value_pairs->cend());
-        response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_NA);
+      case SetUpRequest_Method_PBS: {
+        if (_key_value_pairs == nullptr)
+          _key_value_pairs = std::make_shared<tsl::ordered_map<Key, Value>>();
+        fmt::print("{} ... ", "Generate key value pairs");
+        _key_value_pairs->clear();
+        only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                                  Key>(*_key_value_pairs, usz,
+                                                       value_size, seed);
+        _key_value_pairs->erase(_key_value_pairs->cbegin(),
+                                _key_value_pairs->cbegin() + d);
+        fmt::print("{}\n", "done");
+
+        if (alg == SetUpRequest_Method_PBS) {
+          fmt::print("{} ... ", "Calculate tow sketches");
+          LocalSketchForKeyValuePairs(_key_value_pairs->cbegin(),
+                                      _key_value_pairs->cend());
+          fmt::print("{}\n", "done");
+        }
+        response->set_status(
+            reconciliation::SetUpReply_PreviousExperimentStatus_NA);
         return Status::OK;
       }
-      case SetUpRequest_Method_END:
-      {
+      case SetUpRequest_Method_END: {
         if (_key_value_pairs == nullptr) {
-          response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
+          response->set_status(
+              reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
         } else {
           tsl::ordered_map<Key, Value> ground_truth;
-          only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(ground_truth,
-                                                                                       usz,
-                                                                                       value_size,
-                                                                                       seed);
+          only_for_benchmark::GenerateKeyValuePairs<
+              tsl::ordered_map<Key, Value>, Key>(ground_truth, usz, value_size,
+                                                 seed);
           if (only_for_benchmark::is_equal(*_key_value_pairs, ground_truth)) {
-            response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED);
+            response->set_status(
+                reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED);
           } else {
-            response->set_status(reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
+            response->set_status(
+                reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
           }
           _key_value_pairs->clear();
         }
@@ -140,7 +165,6 @@ class EstimationServiceImpl final : public Estimation::Service {
       default:
         return Status::OK;
     }
-
   }
 
   Status Synchronize(ServerContext *context, const SynchronizeMessage *request,
@@ -168,7 +192,8 @@ class EstimationServiceImpl final : public Estimation::Service {
     return Status::OK;
   }
 
-  Status ReconcileGraphene(ServerContext *context, const GrapheneRequest *request,
+  Status ReconcileGraphene(ServerContext *context,
+                           const GrapheneRequest *request,
                            GrapheneReply *response) override {
     if (_key_value_pairs == nullptr)
       return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
@@ -177,7 +202,7 @@ class EstimationServiceImpl final : public Estimation::Service {
     auto setbsize = _key_value_pairs->size();
     const double DEFAULT_CB = (1.0 - 239.0 / 240);
     const std::vector<uint8_t> DUMMY_VAL{0};
-    const int VAL_SIZE = 1; // bytes
+    const int VAL_SIZE = 1;  // bytes
     struct search_params params;
     bloom_parameters bf_params;
     double a, fpr_sender;
@@ -200,20 +225,23 @@ class EstimationServiceImpl final : public Estimation::Service {
       bloom_filter bloom_sender = bloom_filter(bf_params);
       for (const auto &kv : *_key_value_pairs) {
         bloom_sender.insert(kv.first);
-        iblt_sender_first.insert(kv.first /* key */, DUMMY_VAL /* (dummy) value */);
+        iblt_sender_first.insert(kv.first /* key */,
+                                 DUMMY_VAL /* (dummy) value */);
       }
       auto ssz = bloom_sender.size() / 8;
       response->mutable_bf()->resize(ssz, 0);
-      std::copy(bloom_sender.table(), bloom_sender.table() + ssz, response->mutable_bf()->begin());
+      std::copy(bloom_sender.table(), bloom_sender.table() + ssz,
+                response->mutable_bf()->begin());
       response->set_n(bf_params.projected_element_count);
       response->set_fpr(fpr_sender);
     } else {
       for (const auto &kv : *_key_value_pairs) {
-        iblt_sender_first.insert(kv.first /* key */, DUMMY_VAL /* (dummy) value */);
+        iblt_sender_first.insert(kv.first /* key */,
+                                 DUMMY_VAL /* (dummy) value */);
       }
     }
     auto table = iblt_sender_first.data();
-    for (const auto &cell: table) {
+    for (const auto &cell : table) {
       auto new_cell = response->mutable_ibf()->Add();
       new_cell->set_count(cell.count);
       new_cell->set_keysum(cell.keySum);
@@ -243,11 +271,11 @@ class EstimationServiceImpl final : public Estimation::Service {
                     (_estimated_diff > 200 ? 3 : 4));
 
     using my_iterator_t = decltype(request->cells().cbegin());
-    other_iblt.set(request->cells().cbegin(),
-                   request->cells().cend(),
-                   [](my_iterator_t it) { return it->count(); },
-                   [](my_iterator_t it) { return it->keysum(); },
-                   [](my_iterator_t it) { return it->keycheck(); });
+    other_iblt.set(
+        request->cells().cbegin(), request->cells().cend(),
+        [](my_iterator_t it) { return it->count(); },
+        [](my_iterator_t it) { return it->keysum(); },
+        [](my_iterator_t it) { return it->keycheck(); });
 
     std::set<std::pair<uint64_t, std::vector<uint8_t>>> pos, neg;
     auto ibltD = my_iblt - other_iblt;
@@ -290,7 +318,7 @@ class EstimationServiceImpl final : public Estimation::Service {
 
     std::vector<uint64_t> differences;
     bool succeed =
-        ps.decode((unsigned char *) &(request->sketch()[0]), differences);
+        ps.decode((unsigned char *)&(request->sketch()[0]), differences);
     if (!succeed) {
       // do something
     }
@@ -329,26 +357,26 @@ class EstimationServiceImpl final : public Estimation::Service {
         throw std::runtime_error(
             "encoding hint in the first round should be empty!!");
       }
-      auto[my_enc_tmp, dummy] = _pbs->encode();
-      (void) dummy;  // avoid unused variable warning
+      auto [my_enc_tmp, dummy] = _pbs->encode();
+      (void)dummy;  // avoid unused variable warning
       my_enc = my_enc_tmp;
     } else {
       libpbs::PbsEncodingHintMessage hint(_pbs->hint_max_range());
-      hint.parse((const uint8_t *) request->encoding_hint().c_str(),
+      hint.parse((const uint8_t *)request->encoding_hint().c_str(),
                  request->encoding_hint().size());
       my_enc = _pbs->encodeWithHint(hint);
     }
 
     libpbs::PbsEncodingMessage other_enc(my_enc->field_sz, my_enc->capacity,
                                          my_enc->num_groups);
-    other_enc.parse((const uint8_t *) request->encoding_msg().c_str(),
+    other_enc.parse((const uint8_t *)request->encoding_msg().c_str(),
                     request->encoding_msg().size());
     auto decoding_msg = _pbs->decode(other_enc, xors, checksums);
 
     auto ssz = decoding_msg->serializedSize();
     response->mutable_decoding_msg()->resize(ssz, 0);
 
-    decoding_msg->write((uint8_t *) &(*response->mutable_decoding_msg())[0]);
+    decoding_msg->write((uint8_t *)&(*response->mutable_decoding_msg())[0]);
 
     for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
 
@@ -400,12 +428,12 @@ class EstimationServiceImpl final : public Estimation::Service {
     return _key_value_pairs.get();
   }
 
-  template<typename Iterator>
+  template <typename Iterator>
   void LocalSketchFor(Iterator first, Iterator last) {
     _sketches = _estimator.apply(first, last);
   }
 
-  template<typename Iterator>
+  template <typename Iterator>
   void LocalSketchForKeyValuePairs(Iterator first, Iterator last) {
     _sketches = _estimator.apply_key_value_pairs(first, last);
   }

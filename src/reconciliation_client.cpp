@@ -17,10 +17,14 @@ int main(int argc, char **argv) {
   size_t experiments_times = 100;
   app.add_option("--times", experiments_times, "Number of experiments for each combination of parameters");
 
+  fmt::print("{} ... ", "Parsing command line arguments");
   CLI11_PARSE(app, argc, argv);
+  fmt::print("{}\n", "done");
 
+  fmt::print("{} ... ", "Create reconciliation client");
   ReconciliationClient reconciliation_client(
       grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
+  fmt::print("{}\n", "done");
 
 #ifndef TARGET_SUCCESS_PROB
   bool pbs_only = false;
@@ -33,7 +37,7 @@ int main(int argc, char **argv) {
   size_t offset = 0;
   for (const auto value_sz: value_sizes) {
     for (const auto d: diffs) {
-      fmt::print("Experiments with d = {}, value_sz = {}, union_sz = {} ...", d, value_sz, uion_sz);
+      fmt::print("Experiments with d = {}, value_sz = {}, union_sz = {} ...\n", d, value_sz, uion_sz);
       reconciliation_client.Reconciliation_Experiments(uion_sz,
                                                        d,
                                                        value_sz,

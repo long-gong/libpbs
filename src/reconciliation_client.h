@@ -1,12 +1,12 @@
 #ifndef RECONCILIATION_CLIENT_H_
 #define RECONCILIATION_CLIENT_H_
 
+#include <bloom/bloom_filter.h>
 #include <fmt/format.h>
 #include <grpcpp/grpcpp.h>
 #include <iblt/iblt.h>
-#include <iblt/utilstrencodings.h>
 #include <iblt/search_params.h>
-#include <bloom/bloom_filter.h>
+#include <iblt/utilstrencodings.h>
 #include <random.h>
 #include <tow.h>
 #include <tsl/ordered_map.h>
@@ -19,13 +19,12 @@
 #include <string>
 #include <thread>
 
+#include "SimpleTimer.h"
+#include "bench_utils.h"
 #include "constants.h"
 #include "pbs.h"
 #include "pinsketch.h"
 #include "reconciliation.grpc.pb.h"
-
-#include "bench_utils.h"
-#include "SimpleTimer.h"
 
 using namespace std::chrono_literals;
 
@@ -33,14 +32,14 @@ using grpc::Channel;
 using grpc::ClientContext;
 using grpc::Status;
 
-using reconciliation::SetUpRequest;
 using reconciliation::SetUpReply;
+using reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED;
+using reconciliation::SetUpRequest;
 using reconciliation::SetUpRequest_Method_DDigest;
-using reconciliation::SetUpRequest_Method_PinSketch;
+using reconciliation::SetUpRequest_Method_END;
 using reconciliation::SetUpRequest_Method_Graphene;
 using reconciliation::SetUpRequest_Method_PBS;
-using reconciliation::SetUpRequest_Method_END;
-using reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED;
+using reconciliation::SetUpRequest_Method_PinSketch;
 
 using reconciliation::EstimateReply;
 using reconciliation::EstimateRequest;
@@ -50,9 +49,9 @@ using reconciliation::KeyValue;
 using reconciliation::PinSketchReply;
 using reconciliation::PinSketchRequest;
 
-using reconciliation::IbfCell;
 using reconciliation::DDigestReply;
 using reconciliation::DDigestRequest;
+using reconciliation::IbfCell;
 
 using reconciliation::GrapheneReply;
 using reconciliation::GrapheneRequest;
@@ -72,7 +71,7 @@ class ReconciliationClient {
       : stub_(Estimation::NewStub(channel)),
         _estimator(DEFAULT_SKETCHES_, DEFAULT_SEED) {}
 
-  template<typename PushKeyIterator, typename PullKeyIterator>
+  template <typename PushKeyIterator, typename PullKeyIterator>
   bool PushAndPull(PushKeyIterator push_first, PushKeyIterator push_last,
                    PullKeyIterator pull_first, PullKeyIterator pull_last,
                    tsl::ordered_map<Key, Value> &key_value_pairs) {
@@ -95,7 +94,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -104,7 +103,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template<typename KeyIterator>
+  template <typename KeyIterator>
   bool Pull(KeyIterator first, KeyIterator last,
             tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -120,7 +119,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -129,7 +128,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template<typename KeyIterator>
+  template <typename KeyIterator>
   bool Push(KeyIterator first, KeyIterator last,
             const tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -147,7 +146,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -170,7 +169,8 @@ class ReconciliationClient {
     return reply.status() == SetUpReply_PreviousExperimentStatus_SUCCEED;
   }
 
-  bool SetUp_PinSketch(size_t usz, size_t d, size_t value_sz, unsigned exp_seed, double &completed_time) {
+  bool SetUp_PinSketch(size_t usz, size_t d, size_t value_sz, unsigned exp_seed,
+                       double &completed_time) {
     SetUpRequest request;
     request.set_seed(exp_seed);
     request.set_d(d);
@@ -185,12 +185,12 @@ class ReconciliationClient {
     Status status = stub_->ReconcileSetUp(&context, request, &reply);
 
     tsl::ordered_map<Key, Value> key_value_pairs;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(key_value_pairs,
-                                                                                 usz,
-                                                                                 value_sz,
-                                                                                 exp_seed);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(key_value_pairs, usz,
+                                                   value_sz, exp_seed);
     //
-    for (auto it = key_value_pairs.begin(); it != key_value_pairs.begin() + d; ++it)
+    for (auto it = key_value_pairs.begin(); it != key_value_pairs.begin() + d;
+         ++it)
       key_value_pairs.erase(it);
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
@@ -200,11 +200,15 @@ class ReconciliationClient {
     if (!succeed) return false;
 
     tsl::ordered_map<Key, Value> ground_truth;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(ground_truth, usz, value_sz, exp_seed);
-    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) && verifyServerSide(usz, value_sz, exp_seed);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(ground_truth, usz, value_sz,
+                                                   exp_seed);
+    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
-  bool SetUp_DDigest(size_t usz, size_t d, size_t value_sz, unsigned exp_seed, double &completed_time) {
+  bool SetUp_DDigest(size_t usz, size_t d, size_t value_sz, unsigned exp_seed,
+                     double &completed_time) {
     SetUpRequest request;
     request.set_seed(exp_seed);
     request.set_d(d);
@@ -219,13 +223,11 @@ class ReconciliationClient {
     Status status = stub_->ReconcileSetUp(&context, request, &reply);
 
     tsl::ordered_map<Key, Value> key_value_pairs;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(key_value_pairs,
-                                                                                 usz,
-                                                                                 value_sz,
-                                                                                 exp_seed);
-    //
-    for (auto it = key_value_pairs.begin(); it != key_value_pairs.begin() + d; ++it)
-      key_value_pairs.erase(it);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(key_value_pairs, usz,
+                                                   value_sz, exp_seed);
+    key_value_pairs.erase(key_value_pairs.cbegin(),
+                          key_value_pairs.cbegin() + d);
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
     timer.restart();
@@ -234,11 +236,15 @@ class ReconciliationClient {
     if (!succeed) return false;
 
     tsl::ordered_map<Key, Value> ground_truth;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(ground_truth, usz, value_sz, exp_seed);
-    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) && verifyServerSide(usz, value_sz, exp_seed);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(ground_truth, usz, value_sz,
+                                                   exp_seed);
+    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
-  bool SetUp_Graphene(size_t usz, size_t d, size_t value_sz, unsigned exp_seed, double &completed_time) {
+  bool SetUp_Graphene(size_t usz, size_t d, size_t value_sz, unsigned exp_seed,
+                      double &completed_time) {
     SetUpRequest request;
     request.set_seed(exp_seed);
     request.set_d(d);
@@ -253,10 +259,9 @@ class ReconciliationClient {
     Status status = stub_->ReconcileSetUp(&context, request, &reply);
 
     tsl::ordered_map<Key, Value> key_value_pairs;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(key_value_pairs,
-                                                                                 usz,
-                                                                                 value_sz,
-                                                                                 exp_seed);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(key_value_pairs, usz,
+                                                   value_sz, exp_seed);
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
     timer.restart();
@@ -265,11 +270,15 @@ class ReconciliationClient {
     if (!succeed) return false;
 
     tsl::ordered_map<Key, Value> ground_truth;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(ground_truth, usz, value_sz, exp_seed);
-    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) && verifyServerSide(usz, value_sz, exp_seed);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(ground_truth, usz, value_sz,
+                                                   exp_seed);
+    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
-  bool SetUp_PBS(size_t usz, size_t d, size_t value_sz, unsigned exp_seed, double &completed_time) {
+  bool SetUp_PBS(size_t usz, size_t d, size_t value_sz, unsigned exp_seed,
+                 double &completed_time) {
     SetUpRequest request;
     request.set_seed(exp_seed);
     request.set_d(d);
@@ -284,10 +293,9 @@ class ReconciliationClient {
     Status status = stub_->ReconcileSetUp(&context, request, &reply);
 
     tsl::ordered_map<Key, Value> key_value_pairs;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(key_value_pairs,
-                                                                                 usz,
-                                                                                 value_sz,
-                                                                                 exp_seed);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(key_value_pairs, usz,
+                                                   value_sz, exp_seed);
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
     timer.restart();
@@ -296,45 +304,63 @@ class ReconciliationClient {
     if (!succeed) return false;
 
     tsl::ordered_map<Key, Value> ground_truth;
-    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>, Key>(ground_truth, usz, value_sz, exp_seed);
-    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) && verifyServerSide(usz, value_sz, exp_seed);
+    only_for_benchmark::GenerateKeyValuePairs<tsl::ordered_map<Key, Value>,
+                                              Key>(ground_truth, usz, value_sz,
+                                                   exp_seed);
+    return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
-  void Reconciliation_Experiments(size_t usz,
-                                  size_t d,
-                                  size_t value_sz,
-                                  unsigned exp_seed,
-                                  size_t repeats = 100,
+  void Reconciliation_Experiments(size_t usz, size_t d, size_t value_sz,
+                                  unsigned exp_seed, size_t repeats = 100,
                                   bool only_pbs = false) {
-    std::string res_filename = fmt::format("reconciliation_result_{}_{}_{}_{}.csv", usz, d, exp_seed, repeats);
+    std::string res_filename = fmt::format(
+        "reconciliation_result_{}_{}_{}_{}.csv", usz, d, exp_seed, repeats);
     std::ofstream rfp(res_filename);
     if (!rfp.is_open()) {
-      throw std::runtime_error(fmt::format("Failed to open {}!!", res_filename));
+      throw std::runtime_error(
+          fmt::format("Failed to open {}!!", res_filename));
     }
     std::mt19937_64 gen(exp_seed);
     std::uniform_int_distribution<uint32_t> distribution;
     rfp << "#tid,algorithm,succeed,complete_time\n";
+    fmt::print("{}\n", "#tid,algorithm,succeed,complete_time");
     double completed_time = 0;
     if (only_pbs) {
       for (size_t tid = 0; tid < repeats; ++tid) {
         auto seed = distribution(gen);
         auto succeed = SetUp_Graphene(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0), completed_time);
+        rfp << fmt::format("{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0),
+                           completed_time);
+        fmt::print("{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0),
+                   completed_time);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, exp_seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0), completed_time);
+        rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                           completed_time);
+        fmt::print("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                   completed_time);
       }
     } else {
       for (size_t tid = 0; tid < repeats; ++tid) {
         auto seed = distribution(gen);
         auto succeed = SetUp_DDigest(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "DDigest", (succeed ? 1 : 0), completed_time);
+        rfp << fmt::format("{},{},{},{}\n", tid, "DDigest", (succeed ? 1 : 0),
+                           completed_time);
+        fmt::print("{},{},{},{}\n", tid, "DDigest", (succeed ? 1 : 0),
+                   completed_time);
         completed_time = 0;
         succeed = SetUp_PinSketch(usz, d, value_sz, exp_seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "PinSketch", (succeed ? 1 : 0), completed_time);
+        rfp << fmt::format("{},{},{},{}\n", tid, "PinSketch", (succeed ? 1 : 0),
+                           completed_time);
+        fmt::print("{},{},{},{}\n", tid, "PinSketch", (succeed ? 1 : 0),
+                   completed_time);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, exp_seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0), completed_time);
+        rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                           completed_time);
+        fmt::print("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                   completed_time);
       }
     }
   }
@@ -377,7 +403,7 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-          status.error_message())
+                    status.error_message())
                 << std::endl;
       return false;
     }
@@ -406,18 +432,18 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-          status.error_message())
+                    status.error_message())
                 << std::endl;
       return false;
     }
 
     const std::vector<uint8_t> DUMMY_VAL{0};
-    const int VAL_SIZE = 1; // bytes
+    const int VAL_SIZE = 1;  // bytes
     auto a = reply.a();
     std::vector<int> Z_compl;
     auto iblt_receiver_first = IBLT(a, VAL_SIZE);
     bool no_bf = reply.bf().empty();
-    std::unique_ptr<bloom_filter> bloom_sender_ptr; // empty ptr
+    std::unique_ptr<bloom_filter> bloom_sender_ptr;  // empty ptr
     if (!no_bf) {
       bloom_parameters params;
       params.projected_element_count = reply.n();
@@ -440,11 +466,11 @@ class ReconciliationClient {
     auto iblt_sender_first = IBLT(a, VAL_SIZE);
 
     using cell_iterator_t = decltype(reply.ibf().cbegin());
-    iblt_sender_first.set(reply.ibf().cbegin(),
-                          reply.ibf().cend(),
-                          [](cell_iterator_t it) { return it->count(); },
-                          [](cell_iterator_t it) { return it->keysum(); },
-                          [](cell_iterator_t it) { return it->keycheck(); });
+    iblt_sender_first.set(
+        reply.ibf().cbegin(), reply.ibf().cend(),
+        [](cell_iterator_t it) { return it->count(); },
+        [](cell_iterator_t it) { return it->keysum(); },
+        [](cell_iterator_t it) { return it->keycheck(); });
     std::set<std::pair<uint64_t, std::vector<uint8_t>>> pos, neg;
     // Eppstein subtraction
     auto ibltT = iblt_receiver_first - iblt_sender_first;
@@ -485,7 +511,7 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-          status.error_message())
+                    status.error_message())
                 << std::endl;
       return false;
     }
@@ -543,15 +569,15 @@ class ReconciliationClient {
         break;
       }
 
-      auto[enc, hint] = _pbs->encode();
+      auto [enc, hint] = _pbs->encode();
 
       PbsRequest request;
       request.mutable_encoding_msg()->resize(enc->serializedSize(), 0);
-      enc->write((uint8_t *) &(*request.mutable_encoding_msg())[0]);
+      enc->write((uint8_t *)&(*request.mutable_encoding_msg())[0]);
 
       if (hint != nullptr) {
         request.mutable_encoding_hint()->resize(hint->serializedSize(), 0);
-        hint->write((uint8_t *) &(*request.mutable_encoding_hint())[0]);
+        hint->write((uint8_t *)&(*request.mutable_encoding_hint())[0]);
       }
 
       if (!res.empty()) {
@@ -576,7 +602,7 @@ class ReconciliationClient {
       // Act upon its status.
       if (!status.ok()) {
         std::cerr << (std::to_string(status.error_code()) + ": " +
-            status.error_message())
+                      status.error_message())
                   << std::endl;
         return false;
       }
@@ -589,7 +615,7 @@ class ReconciliationClient {
       libpbs::PbsDecodingMessage decoding_message(
           _pbs->bchParameterM(), _pbs->bchParameterT(), _pbs->numberOfGroups());
 
-      decoding_message.parse((const uint8_t *) reply.decoding_msg().c_str(),
+      decoding_message.parse((const uint8_t *)reply.decoding_msg().c_str(),
                              reply.decoding_msg().size());
 
       xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
@@ -606,7 +632,7 @@ class ReconciliationClient {
     return syn_completed;
   }
 
-  template<typename Iterator>
+  template <typename Iterator>
   float EstimationKeyValuePairs(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply_key_value_pairs(first, last);
     // Data we are sending to the server.
@@ -631,7 +657,7 @@ class ReconciliationClient {
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
-  template<typename Iterator>
+  template <typename Iterator>
   float Estimation(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply(first, last);
     // Data we are sending to the server.
