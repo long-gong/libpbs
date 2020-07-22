@@ -351,8 +351,6 @@ class EstimationServiceImpl final : public Estimation::Service {
     if (_key_value_pairs == nullptr)
       return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
 
-//    fmt::print("estimate = {}\n", _estimated_diff);
-
     std::vector<uint64_t> xors, checksums;
     std::shared_ptr<libpbs::PbsEncodingMessage> my_enc;
 

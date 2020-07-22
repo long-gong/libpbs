@@ -71,7 +71,7 @@ class ReconciliationClient {
       : stub_(Estimation::NewStub(channel)),
         _estimator(DEFAULT_SKETCHES_, DEFAULT_SEED) {}
 
-  template<typename PushKeyIterator, typename PullKeyIterator>
+  template <typename PushKeyIterator, typename PullKeyIterator>
   bool PushAndPull(PushKeyIterator push_first, PushKeyIterator push_last,
                    PullKeyIterator pull_first, PullKeyIterator pull_last,
                    tsl::ordered_map<Key, Value> &key_value_pairs) {
@@ -94,7 +94,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -103,7 +103,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template<typename KeyIterator>
+  template <typename KeyIterator>
   bool Pull(KeyIterator first, KeyIterator last,
             tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -119,7 +119,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -128,7 +128,7 @@ class ReconciliationClient {
     return true;
   }
 
-  template<typename KeyIterator>
+  template <typename KeyIterator>
   bool Push(KeyIterator first, KeyIterator last,
             const tsl::ordered_map<Key, Value> &key_value_pairs) {
     SynchronizeMessage syn_req;
@@ -146,7 +146,7 @@ class ReconciliationClient {
     Status syn_status = stub_->Synchronize(&syn_context, syn_req, &syn_reply);
     if (!syn_status.ok()) {
       std::cerr << (std::to_string(syn_status.error_code()) + ": " +
-          syn_status.error_message())
+                    syn_status.error_message())
                 << std::endl;
       return false;
     }
@@ -203,7 +203,7 @@ class ReconciliationClient {
                                               Key>(ground_truth, usz, value_sz,
                                                    exp_seed);
     return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
-        verifyServerSide(usz, value_sz, exp_seed);
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
   bool SetUp_DDigest(size_t usz, size_t d, size_t value_sz, unsigned exp_seed,
@@ -239,7 +239,7 @@ class ReconciliationClient {
                                               Key>(ground_truth, usz, value_sz,
                                                    exp_seed);
     return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
-        verifyServerSide(usz, value_sz, exp_seed);
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
   bool SetUp_Graphene(size_t usz, size_t d, size_t value_sz, unsigned exp_seed,
@@ -273,7 +273,7 @@ class ReconciliationClient {
                                               Key>(ground_truth, usz, value_sz,
                                                    exp_seed);
     return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
-        verifyServerSide(usz, value_sz, exp_seed);
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
   bool SetUp_PBS(size_t usz, size_t d, size_t value_sz, unsigned exp_seed,
@@ -307,7 +307,7 @@ class ReconciliationClient {
                                               Key>(ground_truth, usz, value_sz,
                                                    exp_seed);
     return only_for_benchmark::is_equal(ground_truth, key_value_pairs) &&
-        verifyServerSide(usz, value_sz, exp_seed);
+           verifyServerSide(usz, value_sz, exp_seed);
   }
 
   void Reconciliation_Experiments(size_t usz, size_t d, size_t value_sz,
@@ -322,29 +322,32 @@ class ReconciliationClient {
     }
     std::mt19937_64 gen(exp_seed);
     std::uniform_int_distribution<uint32_t> distribution;
-    rfp << "#tid,algorithm,succeed,complete_time\n";
-    fmt::print("{}\n", "#tid,algorithm,succeed,complete_time");
+    rfp << "#tid,algorithm,succeed,complete_time,seed,value_size,d\n";
+    fmt::print("{}\n",
+               "#tid,algorithm,succeed,complete_time,seed,value_size,d");
     double completed_time = 0;
     if (only_pbs) {
       for (size_t tid = 0; tid < repeats; ++tid) {
         auto seed = distribution(gen);
         auto succeed = SetUp_Graphene(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0),
-                           completed_time);
-        fmt::print("{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0),
-                   completed_time);
+        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "Graphene",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz,
+                           d);
+        fmt::print("{},{},{},{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0),
+                   completed_time, seed, value_sz, d);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
-                           completed_time);
-        fmt::print("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
-                   completed_time);
+        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "PBS",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz,
+                           d);
+        fmt::print("{},{},{},{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                   completed_time, seed, value_sz, d);
       }
     } else {
       for (size_t tid = 0; tid < repeats; ++tid) {
         auto seed = distribution(gen);
 
-//        fmt::print("tes = {}, seed = {}\n", tid, seed);
+        //        fmt::print("tes = {}, seed = {}\n", tid, seed);
         auto succeed = SetUp_DDigest(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{}\n", tid, "DDigest", (succeed ? 1 : 0),
                            completed_time);
@@ -404,7 +407,7 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-          status.error_message())
+                    status.error_message())
                 << std::endl;
       return false;
     }
@@ -433,7 +436,7 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-          status.error_message())
+                    status.error_message())
                 << std::endl;
       return false;
     }
@@ -512,7 +515,7 @@ class ReconciliationClient {
     // Act upon its status.
     if (!status.ok()) {
       std::cerr << (std::to_string(status.error_code()) + ": " +
-          status.error_message())
+                    status.error_message())
                 << std::endl;
       return false;
     }
@@ -536,13 +539,13 @@ class ReconciliationClient {
       scaled_d = ESTIMATE_SM99(est);
     }
 
-//    fmt::print("estimate: {}\n", scaled_d);
+    //    fmt::print("estimate: {}\n", scaled_d);
 
     only_for_benchmark::SimpleTimer timer;
 
-//    timer.restart();
+    //    timer.restart();
     auto _pbs = std::make_unique<libpbs::ParityBitmapSketch>(scaled_d);
-//    fmt::print("Calc parameter time: {} \n", timer.elapsed() / 1e6);
+    //    fmt::print("Calc parameter time: {} \n", timer.elapsed() / 1e6);
 
     for (const auto &kv : key_value_pairs) _pbs->add(kv.first);
 
@@ -577,15 +580,15 @@ class ReconciliationClient {
         break;
       }
 
-      auto[enc, hint] = _pbs->encode();
+      auto [enc, hint] = _pbs->encode();
 
       PbsRequest request;
       request.mutable_encoding_msg()->resize(enc->serializedSize(), 0);
-      enc->write((uint8_t *) &(*request.mutable_encoding_msg())[0]);
+      enc->write((uint8_t *)&(*request.mutable_encoding_msg())[0]);
 
       if (hint != nullptr) {
         request.mutable_encoding_hint()->resize(hint->serializedSize(), 0);
-        hint->write((uint8_t *) &(*request.mutable_encoding_hint())[0]);
+        hint->write((uint8_t *)&(*request.mutable_encoding_hint())[0]);
       }
 
       if (!res.empty()) {
@@ -610,7 +613,7 @@ class ReconciliationClient {
       // Act upon its status.
       if (!status.ok()) {
         std::cerr << (std::to_string(status.error_code()) + ": " +
-            status.error_message())
+                      status.error_message())
                   << std::endl;
         return false;
       }
@@ -623,28 +626,29 @@ class ReconciliationClient {
       libpbs::PbsDecodingMessage decoding_message(
           _pbs->bchParameterM(), _pbs->bchParameterT(), _pbs->numberOfGroups());
 
-      decoding_message.parse((const uint8_t *) reply.decoding_msg().c_str(),
+      decoding_message.parse((const uint8_t *)reply.decoding_msg().c_str(),
                              reply.decoding_msg().size());
 
       xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
       checksums.insert(checksums.end(), reply.checksum().cbegin(),
                        reply.checksum().cend());
 
-//      if (checksums.size() < 10)
-//        fmt::print("checksums: {}\n", fmt::join(checksums.cbegin(), checksums.cend(), " "));
+      //      if (checksums.size() < 10)
+      //        fmt::print("checksums: {}\n", fmt::join(checksums.cbegin(),
+      //        checksums.cend(), " "));
 
       completed = _pbs->decodeCheck(decoding_message, xors, checksums);
       res = _pbs->differencesLastRound();
 
-//      fmt::print("Round #{}: {:>6} of {:>6} decoded\n", _pbs->rounds(),
-//                 res.size(), d);
+      //      fmt::print("Round #{}: {:>6} of {:>6} decoded\n", _pbs->rounds(),
+      //                 res.size(), d);
 
     } while (true);
 
     return syn_completed;
   }
 
-  template<typename Iterator>
+  template <typename Iterator>
   float EstimationKeyValuePairs(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply_key_value_pairs(first, last);
     // Data we are sending to the server.
@@ -669,7 +673,7 @@ class ReconciliationClient {
 
   // Assembles the client's payload, sends it and presents the response back
   // from the server.
-  template<typename Iterator>
+  template <typename Iterator>
   float Estimation(Iterator first, Iterator last) {
     auto sketches_ = _estimator.apply(first, last);
     // Data we are sending to the server.
