@@ -379,6 +379,12 @@ class EstimationServiceImpl final : public Estimation::Service {
                     request->encoding_msg().size());
     auto decoding_msg = _pbs->decode(other_enc, xors, checksums);
 
+    if (decoding_msg->num_groups == 1) {
+      fmt::print("decoding message:\n\t# of diffs: {}\n\tdiffs: {}\n",
+                 fmt::join(decoding_msg->decoded_num_differences.cbegin(),decoding_msg->decoded_num_differences.end(), " "),
+                 fmt::join(decoding_msg->decoded_differences.cbegin(), decoding_msg->decoded_differences.cend(), " "));
+    }
+
     auto ssz = decoding_msg->serializedSize();
     response->mutable_decoding_msg()->resize(ssz, 0);
 
