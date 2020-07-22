@@ -245,6 +245,7 @@ class ParityBitmapSketch {
     size_t offset = 0, gid = 0;
     xors.clear();
     checksums.clear();
+
     for (const auto p : pbs_decoding_->decoded_num_differences) {
       if (p >= 0) {
         for (size_t k = 0; k < (size_t)p; ++k) {

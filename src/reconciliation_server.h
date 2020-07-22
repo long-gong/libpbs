@@ -83,8 +83,7 @@ class EstimationServiceImpl final : public Estimation::Service {
     reply->set_estimated_value(
         static_cast<float>(d / _estimator.num_sketches()));
 
-    _estimated_diff =
-        ESTIMATE_SM99(reply->estimated_value());
+    _estimated_diff = ESTIMATE_SM99(reply->estimated_value());
     return Status::OK;
   }
 
@@ -169,7 +168,8 @@ class EstimationServiceImpl final : public Estimation::Service {
         if (_pbs != nullptr) _pbs = nullptr;
         return Status::OK;
       }
-      default:return Status::OK;
+      default:
+        return Status::OK;
     }
   }
 
@@ -324,7 +324,7 @@ class EstimationServiceImpl final : public Estimation::Service {
 
     std::vector<uint64_t> differences;
     bool succeed =
-        ps.decode((unsigned char *) &(request->sketch()[0]), differences);
+        ps.decode((unsigned char *)&(request->sketch()[0]), differences);
     if (!succeed) {
       // do something
     }
@@ -363,41 +363,43 @@ class EstimationServiceImpl final : public Estimation::Service {
         throw std::runtime_error(
             "encoding hint in the first round should be empty!!");
       }
-      auto[my_enc_tmp, dummy] = _pbs->encode();
-      (void) dummy;  // avoid unused variable warning
+      auto [my_enc_tmp, dummy] = _pbs->encode();
+      (void)dummy;  // avoid unused variable warning
       my_enc = my_enc_tmp;
     } else {
       libpbs::PbsEncodingHintMessage hint(_pbs->hint_max_range());
-      hint.parse((const uint8_t *) request->encoding_hint().c_str(),
+      hint.parse((const uint8_t *)request->encoding_hint().c_str(),
                  request->encoding_hint().size());
       my_enc = _pbs->encodeWithHint(hint);
     }
 
     libpbs::PbsEncodingMessage other_enc(my_enc->field_sz, my_enc->capacity,
                                          my_enc->num_groups);
-    other_enc.parse((const uint8_t *) request->encoding_msg().c_str(),
+    other_enc.parse((const uint8_t *)request->encoding_msg().c_str(),
                     request->encoding_msg().size());
     auto decoding_msg = _pbs->decode(other_enc, xors, checksums);
-
-    if (decoding_msg->num_groups == 1) {
-      fmt::print("decoding message:\n\t# of diffs: {}\n\tdiffs: {}\n",
-                 fmt::join(decoding_msg->decoded_num_differences.cbegin(),decoding_msg->decoded_num_differences.end(), " "),
-                 fmt::join(decoding_msg->decoded_differences.cbegin(), decoding_msg->decoded_differences.cend(), " "));
-    }
 
     auto ssz = decoding_msg->serializedSize();
     response->mutable_decoding_msg()->resize(ssz, 0);
 
-    decoding_msg->write((uint8_t *) &(*response->mutable_decoding_msg())[0]);
+    decoding_msg->write((uint8_t *)&(*response->mutable_decoding_msg())[0]);
 
     for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
-
-    std::vector<uint64_t> tests;
-    tests.insert(tests.end(), response->xors().cbegin(),
-                 response->xors().cend());
-
     for (auto checksum : checksums)
       *(response->mutable_checksum()->Add()) = checksum;
+
+    if (decoding_msg->num_groups == 1) {
+      fmt::print(
+          "decoding message:\n\t# of diffs: {}\n\tdiffs: {}\n\tchecksum: "
+          "{}\n\tresponse: {}\n",
+          fmt::join(decoding_msg->decoded_num_differences.cbegin(),
+                    decoding_msg->decoded_num_differences.end(), " "),
+          fmt::join(decoding_msg->decoded_differences.cbegin(),
+                    decoding_msg->decoded_differences.cend(), " "),
+          fmt::join(checksums.cbegin(), checksums.cend(), " "),
+          fmt::join(response->checksum().cbegin(), response->checksum().cend(),
+                    " "));
+    }
 
     if (!request->pushed_key_values().empty()) {
       for (const auto &kv : request->pushed_key_values()) {
@@ -440,12 +442,12 @@ class EstimationServiceImpl final : public Estimation::Service {
     return _key_value_pairs.get();
   }
 
-  template<typename Iterator>
+  template <typename Iterator>
   void LocalSketchFor(Iterator first, Iterator last) {
     _sketches = _estimator.apply(first, last);
   }
 
-  template<typename Iterator>
+  template <typename Iterator>
   void LocalSketchForKeyValuePairs(Iterator first, Iterator last) {
     _sketches = _estimator.apply_key_value_pairs(first, last);
   }
