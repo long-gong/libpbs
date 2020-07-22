@@ -304,9 +304,11 @@ class ParityBitmapSketch {
 
     if (xor_sz > xors.size() || checksum_sz > checksums.size())
       throw std::runtime_error(
-          fmt::format("xors: expected size {}, but got size {}\nchecksum: "
-                      "expected size {}, but got size {}\n",
-                      xor_sz, xors.size(), checksum_sz, checksums.size()));
+          fmt::format("xors: expected size {}, but got size {}\n\tchecksums: "
+                      "expected size {}, but got size {}\n\tmore info: \n\t\t# of diffs: {}\n\t\tdiffs: {}",
+                      xor_sz, xors.size(), checksum_sz, checksums.size(),
+                      fmt::join(msg.decoded_num_differences.cbegin(),msg.decoded_num_differences.end(), " "),
+                      fmt::join(msg.decoded_differences.cbegin(), msg.decoded_differences.cend(), " ")));
 
     groups_exp_I_or_II_.clear();
     size_t offset = 0, cid = 0;
