@@ -363,10 +363,11 @@ class ReconciliationClient {
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
-                           completed_time);
-        fmt::print("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
-                   completed_time);
+        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "PBS",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz,
+                           d);
+        fmt::print("{},{},{},{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                   completed_time, seed, value_sz, d);
       }
     }
   }
