@@ -148,22 +148,28 @@ class EstimationServiceImpl final : public Estimation::Service {
               reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
         } else {
           tsl::ordered_map<Key, Value> ground_truth;
+          fmt::print("{} ... ", "Obtain ground truth");
           only_for_benchmark::GenerateKeyValuePairs<
               tsl::ordered_map<Key, Value>, Key>(ground_truth, usz, value_size,
                                                  seed);
+          fmt::print("{}\n", "done");
+          fmt::print("{} ... ", "check result against ground truth");
           if (only_for_benchmark::is_equal(*_key_value_pairs, ground_truth)) {
             response->set_status(
                 reconciliation::SetUpReply_PreviousExperimentStatus_SUCCEED);
+            fmt::print("{}\n", "succeeded");
           } else {
             response->set_status(
                 reconciliation::SetUpReply_PreviousExperimentStatus_FAILED);
+            fmt::print("{}\n", "failed");
           }
           _key_value_pairs->clear();
         }
+        // teardown
+        if (_pbs != nullptr) _pbs = nullptr;
         return Status::OK;
       }
-      default:
-        return Status::OK;
+      default:return Status::OK;
     }
   }
 
@@ -318,7 +324,7 @@ class EstimationServiceImpl final : public Estimation::Service {
 
     std::vector<uint64_t> differences;
     bool succeed =
-        ps.decode((unsigned char *)&(request->sketch()[0]), differences);
+        ps.decode((unsigned char *) &(request->sketch()[0]), differences);
     if (!succeed) {
       // do something
     }
@@ -345,6 +351,8 @@ class EstimationServiceImpl final : public Estimation::Service {
     if (_key_value_pairs == nullptr)
       return Status(StatusCode::UNAVAILABLE, "Server seems not ready yet");
 
+//    fmt::print("estimate = {}\n", _estimated_diff);
+
     std::vector<uint64_t> xors, checksums;
     std::shared_ptr<libpbs::PbsEncodingMessage> my_enc;
 
@@ -357,26 +365,26 @@ class EstimationServiceImpl final : public Estimation::Service {
         throw std::runtime_error(
             "encoding hint in the first round should be empty!!");
       }
-      auto [my_enc_tmp, dummy] = _pbs->encode();
-      (void)dummy;  // avoid unused variable warning
+      auto[my_enc_tmp, dummy] = _pbs->encode();
+      (void) dummy;  // avoid unused variable warning
       my_enc = my_enc_tmp;
     } else {
       libpbs::PbsEncodingHintMessage hint(_pbs->hint_max_range());
-      hint.parse((const uint8_t *)request->encoding_hint().c_str(),
+      hint.parse((const uint8_t *) request->encoding_hint().c_str(),
                  request->encoding_hint().size());
       my_enc = _pbs->encodeWithHint(hint);
     }
 
     libpbs::PbsEncodingMessage other_enc(my_enc->field_sz, my_enc->capacity,
                                          my_enc->num_groups);
-    other_enc.parse((const uint8_t *)request->encoding_msg().c_str(),
+    other_enc.parse((const uint8_t *) request->encoding_msg().c_str(),
                     request->encoding_msg().size());
     auto decoding_msg = _pbs->decode(other_enc, xors, checksums);
 
     auto ssz = decoding_msg->serializedSize();
     response->mutable_decoding_msg()->resize(ssz, 0);
 
-    decoding_msg->write((uint8_t *)&(*response->mutable_decoding_msg())[0]);
+    decoding_msg->write((uint8_t *) &(*response->mutable_decoding_msg())[0]);
 
     for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
 
@@ -386,6 +394,9 @@ class EstimationServiceImpl final : public Estimation::Service {
 
     for (auto checksum : checksums)
       *(response->mutable_checksum()->Add()) = checksum;
+
+//    if (checksums.size() < 10)
+//      fmt::print("checksums: {}\n", fmt::join(checksums.cbegin(), checksums.cend(), " "));
 
     if (!request->pushed_key_values().empty()) {
       for (const auto &kv : request->pushed_key_values()) {
@@ -428,12 +439,12 @@ class EstimationServiceImpl final : public Estimation::Service {
     return _key_value_pairs.get();
   }
 
-  template <typename Iterator>
+  template<typename Iterator>
   void LocalSketchFor(Iterator first, Iterator last) {
     _sketches = _estimator.apply(first, last);
   }
 
-  template <typename Iterator>
+  template<typename Iterator>
   void LocalSketchForKeyValuePairs(Iterator first, Iterator last) {
     _sketches = _estimator.apply_key_value_pairs(first, last);
   }

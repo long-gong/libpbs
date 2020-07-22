@@ -31,11 +31,13 @@ struct search_params {
     csv =
 //        fopen("../IBLT-optimization/param.export.0.995833.2018-07-17.csv", "r");
     fopen("./param.export.0.995833333333333.2018-07-12.csv", "r");
-    fgets(buf, 99, csv);
+    auto not_used = fgets(buf, 99, csv);
+    (void)(not_used);
     struct csvdata tmp;
     while (!feof(csv)) {
-      fscanf(csv, "%d,%lf,%d,%d,%lf", &tmp.item, &tmp.hedge, &tmp.numhash,
+      auto dummy = fscanf(csv, "%d,%lf,%d,%d,%lf", &tmp.item, &tmp.hedge, &tmp.numhash,
              &tmp.size, &tmp.p);
+      (void)(dummy);
       params.push_back(tmp);
     }
     fclose(csv);
