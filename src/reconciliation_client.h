@@ -189,9 +189,8 @@ class ReconciliationClient {
                                               Key>(key_value_pairs, usz,
                                                    value_sz, exp_seed);
     //
-    for (auto it = key_value_pairs.begin(); it != key_value_pairs.begin() + d;
-         ++it)
-      key_value_pairs.erase(it);
+    key_value_pairs.erase(key_value_pairs.cbegin(),
+                          key_value_pairs.cbegin() + d);
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
     timer.restart();
@@ -335,7 +334,7 @@ class ReconciliationClient {
         fmt::print("{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0),
                    completed_time);
         completed_time = 0;
-        succeed = SetUp_PBS(usz, d, value_sz, exp_seed, completed_time);
+        succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
                            completed_time);
         fmt::print("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
@@ -350,13 +349,13 @@ class ReconciliationClient {
         fmt::print("{},{},{},{}\n", tid, "DDigest", (succeed ? 1 : 0),
                    completed_time);
         completed_time = 0;
-        succeed = SetUp_PinSketch(usz, d, value_sz, exp_seed, completed_time);
+        succeed = SetUp_PinSketch(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{}\n", tid, "PinSketch", (succeed ? 1 : 0),
                            completed_time);
         fmt::print("{},{},{},{}\n", tid, "PinSketch", (succeed ? 1 : 0),
                    completed_time);
         completed_time = 0;
-        succeed = SetUp_PBS(usz, d, value_sz, exp_seed, completed_time);
+        succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
                            completed_time);
         fmt::print("{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
