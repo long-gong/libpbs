@@ -339,11 +339,7 @@ class ReconciliationClient {
         fmt::print("{},{},{},{},{},{},{},{}\n", tid, "Graphene",
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d, -1);
         completed_time = 0;
-        try {
-          succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
-        } catch (const std::exception& e) {
-          std::cerr << e.what() << std::endl;
-        }
+        succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
                            (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                            _estimate_bk);
@@ -551,13 +547,10 @@ class ReconciliationClient {
       scaled_d = ESTIMATE_SM99(est);
     }
 
-    //    fmt::print("estimate: {}\n", scaled_d);
-
     only_for_benchmark::SimpleTimer timer;
 
     //    timer.restart();
     auto _pbs = std::make_unique<libpbs::ParityBitmapSketch>(scaled_d);
-    //    fmt::print("Calc parameter time: {} \n", timer.elapsed() / 1e6);
 
     for (const auto &kv : key_value_pairs) _pbs->add(kv.first);
 
@@ -645,7 +638,15 @@ class ReconciliationClient {
       checksums.insert(checksums.end(), reply.checksum().cbegin(),
                        reply.checksum().cend());
 
-      completed = _pbs->decodeCheck(decoding_message, xors, checksums);
+      try {
+        completed = _pbs->decodeCheck(decoding_message, xors, checksums);
+      } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+        fmt::print("DumpInfo: m {} t {}, est_d {}, number of groups {}\n",
+                   _pbs->bchParameterM(), _pbs->bchParameterT(), scaled_d,
+                   _pbs->numberOfGroups());
+        exit(1);
+      }
       res = _pbs->differencesLastRound();
 
     } while (true);
