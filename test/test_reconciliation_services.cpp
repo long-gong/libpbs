@@ -785,6 +785,14 @@ void DoParityBitmapSketchServiceLargeScaleWest(size_t d, size_t est,
     only_for_test::GenerateKeyValuePairs<MyHashMap, int>(*expected, union_sz,
                                                          value_sz, seed);
 
+//    if (seed == 1406943807) {
+//      std::ofstream os("data.txt");
+//      for (const auto& kv: *expected) {
+//        os << kv.first << " " << kv.second << "\n";
+//      }
+//      os.close();
+//    }
+
     client_data = *expected;
     auto succeed = client.Reconciliation_ParityBitmapSketch(client_data, est);
     EXPECT_TRUE(succeed);

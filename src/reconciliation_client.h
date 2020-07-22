@@ -296,13 +296,13 @@ class ReconciliationClient {
                                               Key>(key_value_pairs, usz,
                                                    value_sz, exp_seed);
     // for debugging
-    if (exp_seed == 1406943807) {
-      std::ofstream os("data.txt");
-      for (const auto& kv: key_value_pairs) {
-        os << kv.first << " " << kv.second << "\n";
-      }
-      os.close();
-    }
+//    if (exp_seed == 1406943807) {
+//      std::ofstream os("data.txt");
+//      for (const auto& kv: key_value_pairs) {
+//        os << kv.first << " " << kv.second << "\n";
+//      }
+//      os.close();
+//    }
 
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
@@ -366,6 +366,8 @@ class ReconciliationClient {
         fmt::print("{},{},{},{},{},{},{},{}\n", tid, "DDigest",
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                    _estimate_bk);
+
+        std::this_thread::sleep_for(1s);
         completed_time = 0;
         succeed = SetUp_PinSketch(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PinSketch",
@@ -374,6 +376,8 @@ class ReconciliationClient {
         fmt::print("{},{},{},{},{},{},{},{}\n", tid, "PinSketch",
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                    _estimate_bk);
+
+        std::this_thread::sleep_for(1s);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
@@ -652,7 +656,7 @@ class ReconciliationClient {
                    _pbs->numberOfGroups(), _pbs->rounds(),
                    fmt::join(reply.checksum().cbegin(), reply.checksum().cend(),
                              " "));
-        exit(1);
+        return false;
       }
       res = _pbs->differencesLastRound();
 
