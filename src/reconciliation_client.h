@@ -547,9 +547,6 @@ class ReconciliationClient {
       scaled_d = ESTIMATE_SM99(est);
     }
 
-    only_for_benchmark::SimpleTimer timer;
-
-    //    timer.restart();
     auto _pbs = std::make_unique<libpbs::ParityBitmapSketch>(scaled_d);
 
     for (const auto &kv : key_value_pairs) _pbs->add(kv.first);
@@ -634,8 +631,8 @@ class ReconciliationClient {
       decoding_message.parse((const uint8_t *)reply.decoding_msg().c_str(),
                              reply.decoding_msg().size());
 
-      xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
-      checksums.insert(checksums.end(), reply.checksum().cbegin(),
+      if (!reply.xors().empty()) xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
+      if (!reply.checksum().empty()) checksums.insert(checksums.end(), reply.checksum().cbegin(),
                        reply.checksum().cend());
 
       try {

@@ -81,8 +81,8 @@ message PbsRequest {
 
 message PbsReply {
     bytes decoding_msg = 1;
-    repeated uint32 xors = 2;
-    repeated uint32 checksum = 3;
+    repeated uint32 checksum = 2;
+    repeated uint32 xors = 3;
 
     repeated KeyValue pushed_key_values = 4;
 }
