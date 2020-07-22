@@ -639,9 +639,11 @@ class ReconciliationClient {
         completed = _pbs->decodeCheck(decoding_message, xors, checksums);
       } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
-        fmt::print("DumpInfo: m {} t {}, est_d {}, number of groups {}\n",
+        fmt::print("DumpInfo: m {}, t {}, est_d {}, number of groups {}, response: {}\n",
                    _pbs->bchParameterM(), _pbs->bchParameterT(), scaled_d,
-                   _pbs->numberOfGroups());
+                   _pbs->numberOfGroups(),
+                   fmt::join(reply.checksum().cbegin(), reply.checksum().cend(),
+                             " "));
         exit(1);
       }
       res = _pbs->differencesLastRound();
