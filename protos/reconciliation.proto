@@ -62,7 +62,7 @@ message EstimateReply {
 }
 
 message PinSketchRequest {
-   string sketch = 1;
+   bytes sketch = 1;
 }
 
 message PinSketchReply {
