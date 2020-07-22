@@ -339,7 +339,11 @@ class ReconciliationClient {
         fmt::print("{},{},{},{},{},{},{},{}\n", tid, "Graphene",
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d, -1);
         completed_time = 0;
-        succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
+        try {
+          succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
+        } catch (const std::exception& e) {
+          std::cerr << e.what() << std::endl;
+        }
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
                            (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                            _estimate_bk);

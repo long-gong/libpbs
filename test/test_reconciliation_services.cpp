@@ -347,7 +347,7 @@ TEST(ReconciliationServicesTest, ParityBitmapSketchServiceLargeScale) {
 
 TEST(ReconciliationServicesTest, ParityBitmapSketchServiceLargeScaleWest) {
 //  DoParityBitmapSketchServiceLargeScaleWest(100, 143, 10000, 20, 1063094462);
-  DoParityBitmapSketchServiceLargeScaleWest(100, 143, 10000, 24, 1406943807);
+  DoParityBitmapSketchServiceLargeScaleWest(100, 161, 10000, 24, 1406943807);
 }
 
 TEST(ReconciliationServicesTest, DDigestService) {
