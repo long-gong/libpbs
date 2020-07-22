@@ -13,7 +13,6 @@
 
 #include "eigen_boost_serialization.hpp"
 
-// TODO: change to boost::cache
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include <stlcache/stlcache.hpp>

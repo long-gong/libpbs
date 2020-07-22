@@ -12,9 +12,12 @@
 #ifndef PBS_PARAMS_H_
 #define PBS_PARAMS_H_
 
-#include <eigen3/Eigen/Dense>
-#include <stats.hpp>
+#include <tsl/ordered_map.h>
 
+#include <eigen3/Eigen/Dense>
+#include <numeric>
+#include <stats.hpp>
+#include <tuple>
 #include <vector>
 
 #include "cache_helper.h"
@@ -25,7 +28,54 @@ namespace {
 constexpr size_t MAX_BALLS = 200;
 constexpr size_t M_MIN = 6;
 constexpr size_t M_MAX = 14;
-} // end namespace
+constexpr double ONE_IN_240 = ((double)1.0) / 240.0;
+inline void make_sure_cache_dir_exists() {
+  boost::filesystem::path dir(DEFAULT_CACHE_DIR);
+  if (!boost::filesystem::exists(dir))
+    boost::filesystem::create_directories(dir);
+}
+inline std::string getCachedFilename(double targetProb) {
+  make_sure_cache_dir_exists();
+  if (std::abs(targetProb - 0.99) < std::numeric_limits<double>::epsilon()) {
+    return std::string(DEFAULT_CACHE_DIR) + "best_bch_parameters_99.csv";
+  } else if (std::abs(targetProb - ONE_IN_240) <
+             std::numeric_limits<double>::epsilon()) {
+    return std::string(DEFAULT_CACHE_DIR) + "best_bch_parameters_9958.csv";
+  } else {
+    throw std::runtime_error("Unsupported");
+  }
+}
+
+tsl::ordered_map<size_t, std::tuple<size_t, size_t, double>> &getDirectCache() {
+  static tsl::ordered_map<size_t, std::tuple<size_t, size_t, double>>
+      my_direct_cache;
+  return my_direct_cache;
+}
+
+inline void save2CachedFile(double targetProb) {
+  auto fn = getCachedFilename(targetProb);
+  std::ofstream ofp(fn);
+  if (!ofp.is_open()) throw std::runtime_error("Failed to open file " + fn);
+  for (const auto &kv : getDirectCache()) {
+    ofp << kv.first << " " << std::get<0>(kv.second) << " "
+        << std::get<1>(kv.second) << " " << std::get<2>(kv.second) << "\n";
+  }
+  ofp.close();
+}
+
+inline void loadFromCachedFile(double targetProb) {
+  auto fn = getCachedFilename(targetProb);
+  std::ifstream ifp(fn);
+  if (!ifp.is_open()) return;
+  while (!ifp.eof()) {
+    size_t d, m, t;
+    double prob;
+    ifp >> d >> m >> t >> prob;
+    getDirectCache().insert({d, {m, t, prob}});
+  }
+  ifp.close();
+}
+}  // end namespace
 
 // matrix type of double
 using Mat = Eigen::MatrixXd;
@@ -49,18 +99,33 @@ struct BestBchParam {
 class PbsParam {
  public:
   /**
-   * @brief Calculate the best BCH parameter (in terms of minimizing communication overhead) in PBS
+   * @brief Calculate the best BCH parameter (in terms of minimizing
+   * communication overhead) in PBS
    *
-   * @param d                     cardinality of the set difference (either exact or an accurate estimate)
+   * @param d                     cardinality of the set difference (either
+   * exact or an accurate estimate)
    * @param delta                 average number of distinct elements per group
-   * @param r                     maximum number of rounds to achieve the target success probability
-   * @param c                     number of groups to be further partitioned when BCH decoding failed
-   * @param targetProb            target success probability for PBS to reconcile all distinct elements in `r` rounds
+   * @param r                     maximum number of rounds to achieve the target
+   * success probability
+   * @param c                     number of groups to be further partitioned
+   * when BCH decoding failed
+   * @param targetProb            target success probability for PBS to
+   * reconcile all distinct elements in `r` rounds
    * @param bch_param             best parameter to be returned
-   * @return                      upper bound for the failure probability when using the best parameter
+   * @return                      upper bound for the failure probability when
+   * using the best parameter
    */
   static double bestBchParam(size_t d, double delta, size_t r, size_t c,
                              double targetProb, BestBchParam &bch_param) {
+    {  // load from cache
+      loadFromCachedFile(targetProb);
+      if (getDirectCache().contains(d)) {
+        auto cached_res = getDirectCache().at(d);
+        bch_param.m = std::get<0>(cached_res);
+        bch_param.t = std::get<1>(cached_res);
+        return std::get<2>(cached_res);
+      }
+    }
     double best_cost = std::numeric_limits<double>::max(), cost = 0;
     size_t m = 1, t = 1;
     double failure_prob_ub = -1.0;
@@ -111,6 +176,11 @@ class PbsParam {
 
     bch_param.m = m;
     bch_param.t = t;
+
+    {  // save to cache
+      getDirectCache().insert({d, {bch_param.m, bch_param.t, failure_prob_ub}});
+      save2CachedFile(targetProb);
+    }
     return failure_prob_ub;
   }
 
@@ -124,11 +194,13 @@ class PbsParam {
    * Randomization and probabilistic techniques in algorithms and data analysis.
    * Cambridge university press.
    *
-   * @param mr_m2d        transition probability matrix for multi-round operations in PBS
+   * @param mr_m2d        transition probability matrix for multi-round
+   * operations in PBS
    * @param m             number of balls (distinct elements)
    * @param n             number of bins
    * @param t             error-correcting capacity
-   * @param r             maximum number of rounds to achieve the target success probability
+   * @param r             maximum number of rounds to achieve the target success
+   * probability
    * @return              "times 2 bound" for the failure probability
    */
   static double computeFailureProbabilityBound(const Mat &mr_m2d, size_t m,
@@ -159,7 +231,8 @@ class PbsParam {
    * @param n             block length of BCH code
    * @param r             maximum number of rounds
    * @param t             error-correcting capacity of BCH code
-   * @param c             number of groups to further partiton when BCH decoding failed
+   * @param c             number of groups to further partiton when BCH decoding
+   * failed
    * @return              "times 2 bound" for the failure probability
    */
   static double failureProbabilityUB(size_t d, double delta, size_t n, size_t r,
@@ -276,16 +349,16 @@ class PbsParam {
           if (b == 1)
             m3d[x](a, b) =
                 m3d[x - 1](a, b + 1) * static_cast<double>(b) / n +
-                    m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
+                m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
           else if (b == m + 1)
             m3d[x](a, b) =
                 m3d[x - 1](a + 1, b - 1) * static_cast<double>(a + 1) / n +
-                    m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
+                m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
           else
             m3d[x](a, b) =
                 m3d[x - 1](a + 1, b - 1) * static_cast<double>(a + 1) / n +
-                    m3d[x - 1](a, b + 1) * static_cast<double>(b) / n +
-                    m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
+                m3d[x - 1](a, b + 1) * static_cast<double>(b) / n +
+                m3d[x - 1](a, b) * static_cast<double>(n - a - b + 1) / n;
         }
       }
     }
