@@ -5,7 +5,6 @@
 
 #include "reconciliation_client.h"
 #include "reconciliation_server.h"
-
 #include "test_helper.h"
 
 // Somewhere in the global scope :/
@@ -23,17 +22,11 @@ void reset_pinsketch_service() {
   exit_pinsketch_service = std::promise<void>();
 }
 void stop_pbs_service() { exit_pbs_service.set_value(); }
-void reset_pbs_service() {
-  exit_pbs_service = std::promise<void>();
-}
-void stop_ddigest_service() { exit_ddigest_service.set_value();}
-void reset_ddigest_service() {
-  exit_ddigest_service = std::promise<void>();
-}
+void reset_pbs_service() { exit_pbs_service = std::promise<void>(); }
+void stop_ddigest_service() { exit_ddigest_service.set_value(); }
+void reset_ddigest_service() { exit_ddigest_service = std::promise<void>(); }
 void stop_graphene_service() { exit_graphene_service.set_value(); }
-void reset_graphene_service() {
-  exit_graphene_service = std::promise<void>();
-}
+void reset_graphene_service() { exit_graphene_service = std::promise<void>(); }
 void stop_push_pull_service() { exit_push_pull_service.set_value(); }
 
 void run_server_for_testing_estimation_service() {
@@ -143,7 +136,7 @@ void run_server_for_testing_graphene_service() {
 
   auto server_data_ptr = std::make_shared<tsl::ordered_map<Key, Value>>(
       tsl::ordered_map<Key, Value>{
-           {4, "4444"}, {6, "666666"}, {3, "333"}, {5, "55555"}});
+          {4, "4444"}, {6, "666666"}, {3, "333"}, {5, "55555"}});
 
   service.set_key_value_pairs(server_data_ptr);
 
@@ -206,17 +199,33 @@ void run_server_for_testing_pbs_service() {
   serving_thread.join();
 }
 
-void run_server_for_testing_pinsketch_service_large_scale(size_t d, uint32_t start, unsigned seed);
-void DoPinSketchServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
-void run_server_for_testing_pbs_service_large_scale(size_t d, uint32_t start, unsigned seed);
-void DoParityBitmapSketchServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
-void run_server_for_testing_ddigest_service_large_scale(size_t d, uint32_t start, unsigned seed);
-void DoDDigestServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
-void run_server_for_testing_graphene_service_large_scale(size_t d, uint32_t start, unsigned seed);
-void DoGrapheneServiceLargeScale(size_t d, uint32_t start = 1000, unsigned seed=20200717u);
+void run_server_for_testing_pinsketch_service_large_scale(size_t d,
+                                                          uint32_t start,
+                                                          unsigned seed);
+void DoPinSketchServiceLargeScale(size_t d, uint32_t start = 1000,
+                                  unsigned seed = 20200717u);
+void run_server_for_testing_pbs_service_large_scale(size_t d, uint32_t start,
+                                                    unsigned seed);
+void DoParityBitmapSketchServiceLargeScale(size_t d, uint32_t start = 1000,
+                                           unsigned seed = 20200717u);
+void run_server_for_testing_ddigest_service_large_scale(size_t d,
+                                                        uint32_t start,
+                                                        unsigned seed);
+void DoDDigestServiceLargeScale(size_t d, uint32_t start = 1000,
+                                unsigned seed = 20200717u);
+void run_server_for_testing_graphene_service_large_scale(size_t d,
+                                                         uint32_t start,
+                                                         unsigned seed);
+void DoGrapheneServiceLargeScale(size_t d, uint32_t start = 1000,
+                                 unsigned seed = 20200717u);
 
-void run_server_for_testing_pbs_service_large_scale_west(size_t d, size_t est, size_t union_sz, unsigned seed);
-void DoParityBitmapSketchServiceLargeScaleWest(size_t d, size_t est, size_t union_sz, unsigned seed);
+void run_server_for_testing_pbs_service_large_scale_west(size_t d, size_t est,
+                                                         size_t union_sz,
+                                                         size_t value_sz,
+                                                         unsigned seed);
+void DoParityBitmapSketchServiceLargeScaleWest(size_t d, size_t est,
+                                               size_t union_sz, size_t value_sz,
+                                               unsigned seed);
 
 void run_server_for_testing_push_pull_service() {
   std::string server_address("0.0.0.0:50051");
@@ -290,11 +299,10 @@ TEST(ReconciliationServicesTest, PinSketchService) {
     EXPECT_TRUE(client.Reconciliation_PinSketch(client_data, 4));
 
     EXPECT_EQ(expected.size(), client_data.size());
-    for (const auto& kv: expected) {
+    for (const auto &kv : expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, client_data.at(kv.first));
     }
-
   }
 
   stop_pinsketch_service();
@@ -303,8 +311,7 @@ TEST(ReconciliationServicesTest, PinSketchService) {
 
 TEST(ReconciliationServicesTest, PinSketchServiceLargeScale) {
   // 100000 is too large for PinSketch
-  for (auto d: {100, 1000, 10000})
-    DoPinSketchServiceLargeScale(d);
+  for (auto d : {100, 1000, 10000}) DoPinSketchServiceLargeScale(d);
 }
 
 TEST(ReconciliationServicesTest, ParityBitmapSketchServiceSmallScale) {
@@ -323,7 +330,7 @@ TEST(ReconciliationServicesTest, ParityBitmapSketchServiceSmallScale) {
                                           {4, "4444"}, {6, "666666"}};
     EXPECT_TRUE(client.Reconciliation_ParityBitmapSketch(client_data, 4));
     EXPECT_EQ(expected.size(), client_data.size());
-    for (const auto& kv: expected) {
+    for (const auto &kv : expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, client_data.at(kv.first));
     }
@@ -334,12 +341,13 @@ TEST(ReconciliationServicesTest, ParityBitmapSketchServiceSmallScale) {
 }
 
 TEST(ReconciliationServicesTest, ParityBitmapSketchServiceLargeScale) {
-  for (auto d: {100, 1000, 10000, 100000})
+  for (auto d : {100, 1000, 10000, 100000})
     DoParityBitmapSketchServiceLargeScale(d);
 }
 
 TEST(ReconciliationServicesTest, ParityBitmapSketchServiceLargeScaleWest) {
-   DoParityBitmapSketchServiceLargeScaleWest(100, 143, 10000, 1063094462);
+//  DoParityBitmapSketchServiceLargeScaleWest(100, 143, 10000, 20, 1063094462);
+  DoParityBitmapSketchServiceLargeScaleWest(100, 143, 10000, 24, 1406943807);
 }
 
 TEST(ReconciliationServicesTest, DDigestService) {
@@ -359,11 +367,10 @@ TEST(ReconciliationServicesTest, DDigestService) {
     EXPECT_TRUE(client.Reconciliation_DDigest(client_data, 4));
 
     EXPECT_EQ(expected.size(), client_data.size());
-    for (const auto& kv: expected) {
+    for (const auto &kv : expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, client_data.at(kv.first));
     }
-
   }
 
   stop_ddigest_service();
@@ -379,22 +386,20 @@ TEST(ReconciliationServicesTest, GrapheneService) {
     std::string target_str = "localhost:50051";
     ReconciliationClient client(
         grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
-    tsl::ordered_map<Key, Value> client_data{
-        {1, "1"},    {2, "22"},
-        {3, "333"},  {5, "55555"},
-        {4, "4444"}, {6, "666666"}};
+    tsl::ordered_map<Key, Value> client_data{{1, "1"},    {2, "22"},
+                                             {3, "333"},  {5, "55555"},
+                                             {4, "4444"}, {6, "666666"}};
 
     EXPECT_TRUE(client.Reconciliation_Graphene(client_data));
 
-    std::vector<Key> pull_keys{1,2};
-    tsl::ordered_map<Key, Value> expected{{1, "1"},    {2, "22"}};
+    std::vector<Key> pull_keys{1, 2};
+    tsl::ordered_map<Key, Value> expected{{1, "1"}, {2, "22"}};
     tsl::ordered_map<Key, Value> obtained;
     client.Pull(pull_keys.begin(), pull_keys.end(), obtained);
-    for (const auto& kv: expected) {
+    for (const auto &kv : expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, obtained.at(kv.first));
     }
-
   }
 
   stop_graphene_service();
@@ -402,14 +407,12 @@ TEST(ReconciliationServicesTest, GrapheneService) {
 }
 
 TEST(ReconciliationServicesTest, GrapheneServiceLargeScale) {
-//  DoGrapheneServiceLargeScale(100);
-  for (auto d: {100, 1000, 10000, 100000})
-    DoGrapheneServiceLargeScale(d);
+  //  DoGrapheneServiceLargeScale(100);
+  for (auto d : {100, 1000, 10000, 100000}) DoGrapheneServiceLargeScale(d);
 }
 
 TEST(ReconciliationServicesTest, DDigestServiceLargeScale) {
-  for (auto d: {100, 1000, 10000})
-    DoDDigestServiceLargeScale(d);
+  for (auto d : {100, 1000, 10000}) DoDDigestServiceLargeScale(d);
 }
 
 TEST(ReconciliationServicesTest, PushPullService) {
@@ -462,20 +465,21 @@ int main(int argc, char **argv) {
   return RUN_ALL_TESTS();
 }
 
-
-std::shared_ptr<tsl::ordered_map<Key, Value>>
-generateKeyValuePairs(size_t d, uint32_t start, unsigned seed=202007u) {
+std::shared_ptr<tsl::ordered_map<Key, Value>> generateKeyValuePairs(
+    size_t d, uint32_t start, unsigned seed = 202007u) {
   std::mt19937_64 gen(seed);
   std::uniform_int_distribution<> dist;
   auto server_data_ptr = std::make_shared<tsl::ordered_map<Key, Value>>();
-  for (size_t i = 0;i < d;++ i) {
+  for (size_t i = 0; i < d; ++i) {
     server_data_ptr->insert({start + i, std::to_string(dist(gen))});
   }
 
   return server_data_ptr;
 }
 
-void run_server_for_testing_graphene_service_large_scale(size_t d, uint32_t start, unsigned seed) {
+void run_server_for_testing_graphene_service_large_scale(size_t d,
+                                                         uint32_t start,
+                                                         unsigned seed) {
   std::string server_address("0.0.0.0:50051");
   EstimationServiceImpl service;
 
@@ -492,8 +496,8 @@ void run_server_for_testing_graphene_service_large_scale(size_t d, uint32_t star
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server (testing graphene service large scale) listening on " << server_address
-            << std::endl;
+  std::cout << "Server (testing graphene service large scale) listening on "
+            << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
@@ -508,7 +512,8 @@ void run_server_for_testing_graphene_service_large_scale(size_t d, uint32_t star
 
 void DoGrapheneServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
   reset_graphene_service();
-  std::thread th_run_server(run_server_for_testing_graphene_service_large_scale, d, start, seed);
+  std::thread th_run_server(run_server_for_testing_graphene_service_large_scale,
+                            d, start, seed);
   // make sure server is ready when client calls
   std::this_thread::sleep_for(1s);
   {
@@ -517,16 +522,17 @@ void DoGrapheneServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
     ReconciliationClient client(
         grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
     tsl::ordered_map<Key, Value> client_data;
-    std::shared_ptr<tsl::ordered_map<Key, Value>> expected = generateKeyValuePairs(d, start, seed);
+    std::shared_ptr<tsl::ordered_map<Key, Value>> expected =
+        generateKeyValuePairs(d, start, seed);
     client_data = *expected;
     auto succeed = client.Reconciliation_Graphene(client_data);
     EXPECT_TRUE(succeed);
     std::vector<Key> pulled_keys;
     tsl::ordered_map<Key, Value> obtained;
-    for (const auto& kv: client_data) pulled_keys.push_back(kv.first);
+    for (const auto &kv : client_data) pulled_keys.push_back(kv.first);
     client.Pull(pulled_keys.cbegin(), pulled_keys.cend(), obtained);
     EXPECT_EQ(expected->size(), obtained.size());
-    for (const auto& kv: *expected) {
+    for (const auto &kv : *expected) {
       EXPECT_TRUE(obtained.count(kv.first) > 0);
       EXPECT_EQ(kv.second, obtained.at(kv.first));
     }
@@ -536,7 +542,9 @@ void DoGrapheneServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
   th_run_server.join();
 }
 
-void run_server_for_testing_ddigest_service_large_scale(size_t d, uint32_t start, unsigned seed) {
+void run_server_for_testing_ddigest_service_large_scale(size_t d,
+                                                        uint32_t start,
+                                                        unsigned seed) {
   std::string server_address("0.0.0.0:50051");
   EstimationServiceImpl service;
 
@@ -554,8 +562,8 @@ void run_server_for_testing_ddigest_service_large_scale(size_t d, uint32_t start
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server (testing ddigest service large scale) listening on " << server_address
-            << std::endl;
+  std::cout << "Server (testing ddigest service large scale) listening on "
+            << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
@@ -570,7 +578,8 @@ void run_server_for_testing_ddigest_service_large_scale(size_t d, uint32_t start
 
 void DoDDigestServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
   reset_ddigest_service();
-  std::thread th_run_server(run_server_for_testing_ddigest_service_large_scale, d, start, seed);
+  std::thread th_run_server(run_server_for_testing_ddigest_service_large_scale,
+                            d, start, seed);
   // make sure server is ready when client calls
   std::this_thread::sleep_for(1s);
   {
@@ -579,11 +588,12 @@ void DoDDigestServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
     ReconciliationClient client(
         grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
     tsl::ordered_map<Key, Value> client_data;
-    std::shared_ptr<tsl::ordered_map<Key, Value>> expected = generateKeyValuePairs(d, start, seed);
+    std::shared_ptr<tsl::ordered_map<Key, Value>> expected =
+        generateKeyValuePairs(d, start, seed);
     auto succeed = client.Reconciliation_PinSketch(client_data, d);
     EXPECT_TRUE(succeed);
     EXPECT_EQ(expected->size(), client_data.size());
-    for (const auto& kv: *expected) {
+    for (const auto &kv : *expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, client_data.at(kv.first));
     }
@@ -593,7 +603,9 @@ void DoDDigestServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
   th_run_server.join();
 }
 
-void run_server_for_testing_pinsketch_service_large_scale(size_t d, uint32_t start, unsigned seed) {
+void run_server_for_testing_pinsketch_service_large_scale(size_t d,
+                                                          uint32_t start,
+                                                          unsigned seed) {
   std::string server_address("0.0.0.0:50051");
   EstimationServiceImpl service;
 
@@ -611,8 +623,8 @@ void run_server_for_testing_pinsketch_service_large_scale(size_t d, uint32_t sta
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server (testing pinsketch service large scale) listening on " << server_address
-            << std::endl;
+  std::cout << "Server (testing pinsketch service large scale) listening on "
+            << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
@@ -627,7 +639,8 @@ void run_server_for_testing_pinsketch_service_large_scale(size_t d, uint32_t sta
 
 void DoPinSketchServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
   reset_pinsketch_service();
-  std::thread th_run_server(run_server_for_testing_pinsketch_service_large_scale, d, start, seed);
+  std::thread th_run_server(
+      run_server_for_testing_pinsketch_service_large_scale, d, start, seed);
   // make sure server is ready when client calls
   std::this_thread::sleep_for(1s);
   {
@@ -636,11 +649,12 @@ void DoPinSketchServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
     ReconciliationClient client(
         grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
     tsl::ordered_map<Key, Value> client_data;
-    std::shared_ptr<tsl::ordered_map<Key, Value>> expected = generateKeyValuePairs(d, start, seed);
+    std::shared_ptr<tsl::ordered_map<Key, Value>> expected =
+        generateKeyValuePairs(d, start, seed);
     auto succeed = client.Reconciliation_PinSketch(client_data, d);
     EXPECT_TRUE(succeed);
     EXPECT_EQ(expected->size(), client_data.size());
-    for (const auto& kv: *expected) {
+    for (const auto &kv : *expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, client_data.at(kv.first));
     }
@@ -650,7 +664,8 @@ void DoPinSketchServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
   th_run_server.join();
 }
 
-void run_server_for_testing_pbs_service_large_scale(size_t d, uint32_t start, unsigned seed) {
+void run_server_for_testing_pbs_service_large_scale(size_t d, uint32_t start,
+                                                    unsigned seed) {
   std::string server_address("0.0.0.0:50051");
   EstimationServiceImpl service;
 
@@ -668,8 +683,8 @@ void run_server_for_testing_pbs_service_large_scale(size_t d, uint32_t start, un
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server (testing pbs service large scale) listening on " << server_address
-            << std::endl;
+  std::cout << "Server (testing pbs service large scale) listening on "
+            << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
@@ -682,9 +697,11 @@ void run_server_for_testing_pbs_service_large_scale(size_t d, uint32_t start, un
   serving_thread.join();
 }
 
-void DoParityBitmapSketchServiceLargeScale(size_t d, uint32_t start, unsigned seed) {
+void DoParityBitmapSketchServiceLargeScale(size_t d, uint32_t start,
+                                           unsigned seed) {
   reset_pbs_service();
-  std::thread th_run_server(run_server_for_testing_pbs_service_large_scale, d, start, seed);
+  std::thread th_run_server(run_server_for_testing_pbs_service_large_scale, d,
+                            start, seed);
   // make sure server is ready when client calls
   std::this_thread::sleep_for(1s);
   {
@@ -693,11 +710,12 @@ void DoParityBitmapSketchServiceLargeScale(size_t d, uint32_t start, unsigned se
     ReconciliationClient client(
         grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
     tsl::ordered_map<Key, Value> client_data;
-    std::shared_ptr<tsl::ordered_map<Key, Value>> expected = generateKeyValuePairs(d, start, seed);
+    std::shared_ptr<tsl::ordered_map<Key, Value>> expected =
+        generateKeyValuePairs(d, start, seed);
     auto succeed = client.Reconciliation_ParityBitmapSketch(client_data, d);
     EXPECT_TRUE(succeed);
     EXPECT_EQ(expected->size(), client_data.size());
-    for (const auto& kv: *expected) {
+    for (const auto &kv : *expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, client_data.at(kv.first));
     }
@@ -708,14 +726,19 @@ void DoParityBitmapSketchServiceLargeScale(size_t d, uint32_t start, unsigned se
 }
 
 typedef tsl::ordered_map<int, std::string> MyHashMap;
-void run_server_for_testing_pbs_service_large_scale_west(size_t d, size_t est, size_t union_sz, unsigned seed) {
+void run_server_for_testing_pbs_service_large_scale_west(size_t d, size_t est,
+                                                         size_t union_sz,
+                                                         size_t value_sz,
+                                                         unsigned seed) {
   std::string server_address("0.0.0.0:50051");
   EstimationServiceImpl service;
 
   std::shared_ptr<MyHashMap> server_data_ptr = std::make_shared<MyHashMap>();
 
-  only_for_test::GenerateKeyValuePairs<MyHashMap, int>(*server_data_ptr, union_sz, 20, seed);
-  server_data_ptr->erase(server_data_ptr->cbegin(), server_data_ptr->cbegin() + d);
+  only_for_test::GenerateKeyValuePairs<MyHashMap, int>(
+      *server_data_ptr, union_sz, value_sz, seed);
+  server_data_ptr->erase(server_data_ptr->cbegin(),
+                         server_data_ptr->cbegin() + d);
 
   service.set_key_value_pairs(server_data_ptr);
   service.set_estimated_diff(est);
@@ -730,8 +753,8 @@ void run_server_for_testing_pbs_service_large_scale_west(size_t d, size_t est, s
   builder.RegisterService(&service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server (testing pbs service large scale west) listening on " << server_address
-            << std::endl;
+  std::cout << "Server (testing pbs service large scale west) listening on "
+            << server_address << std::endl;
 
   // Wait for the server to shutdown. Note that some other thread must be
   // responsible for shutting down the server for this call to ever return.
@@ -744,9 +767,12 @@ void run_server_for_testing_pbs_service_large_scale_west(size_t d, size_t est, s
   serving_thread.join();
 }
 
-void DoParityBitmapSketchServiceLargeScaleWest(size_t d, size_t est, size_t union_sz, unsigned seed) {
+void DoParityBitmapSketchServiceLargeScaleWest(size_t d, size_t est,
+                                               size_t union_sz, size_t value_sz,
+                                               unsigned seed) {
   reset_pbs_service();
-  std::thread th_run_server(run_server_for_testing_pbs_service_large_scale_west, d, est, union_sz, seed);
+  std::thread th_run_server(run_server_for_testing_pbs_service_large_scale_west,
+                            d, est, union_sz, value_sz, seed);
   // make sure server is ready when client calls
   std::this_thread::sleep_for(1s);
   {
@@ -756,13 +782,14 @@ void DoParityBitmapSketchServiceLargeScaleWest(size_t d, size_t est, size_t unio
         grpc::CreateChannel(target_str, grpc::InsecureChannelCredentials()));
     tsl::ordered_map<Key, Value> client_data;
     std::shared_ptr<MyHashMap> expected = std::make_shared<MyHashMap>();
-    only_for_test::GenerateKeyValuePairs<MyHashMap, int>(*expected, union_sz, 20, seed);
+    only_for_test::GenerateKeyValuePairs<MyHashMap, int>(*expected, union_sz,
+                                                         value_sz, seed);
 
     client_data = *expected;
     auto succeed = client.Reconciliation_ParityBitmapSketch(client_data, est);
     EXPECT_TRUE(succeed);
     EXPECT_EQ(expected->size(), client_data.size());
-    for (const auto& kv: *expected) {
+    for (const auto &kv : *expected) {
       EXPECT_TRUE(client_data.count(kv.first) > 0);
       EXPECT_EQ(kv.second, client_data.at(kv.first));
     }

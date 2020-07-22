@@ -322,26 +322,29 @@ class ReconciliationClient {
     }
     std::mt19937_64 gen(exp_seed);
     std::uniform_int_distribution<uint32_t> distribution;
-    rfp << "#tid,algorithm,succeed,complete_time,seed,value_size,d\n";
-    fmt::print("{}\n",
-               "#tid,algorithm,succeed,complete_time,seed,value_size,d");
+    rfp << "#tid,algorithm,succeed,complete_time,seed,value_size,d,estimated_"
+           "d\n";
+    fmt::print(
+        "{}\n",
+        "#tid,algorithm,succeed,complete_time,seed,value_size,d,estimated_d");
     double completed_time = 0;
+
     if (only_pbs) {
       for (size_t tid = 0; tid < repeats; ++tid) {
         auto seed = distribution(gen);
         auto succeed = SetUp_Graphene(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "Graphene",
-                           (succeed ? 1 : 0), completed_time, seed, value_sz,
-                           d);
-        fmt::print("{},{},{},{},{},{},{}\n", tid, "Graphene", (succeed ? 1 : 0),
-                   completed_time, seed, value_sz, d);
+        rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "Graphene",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz, d,
+                           -1);
+        fmt::print("{},{},{},{},{},{},{},{}\n", tid, "Graphene",
+                   (succeed ? 1 : 0), completed_time, seed, value_sz, d, -1);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "PBS",
-                           (succeed ? 1 : 0), completed_time, seed, value_sz,
-                           d);
-        fmt::print("{},{},{},{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
-                   completed_time, seed, value_sz, d);
+        rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz, d,
+                           _estimate_bk);
+        fmt::print("{},{},{},{},{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                   completed_time, seed, value_sz, d, _estimate_bk);
       }
     } else {
       for (size_t tid = 0; tid < repeats; ++tid) {
@@ -349,25 +352,27 @@ class ReconciliationClient {
 
         //        fmt::print("tes = {}, seed = {}\n", tid, seed);
         auto succeed = SetUp_DDigest(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "DDigest",
-                           (succeed ? 1 : 0), completed_time, seed, value_sz,
-                           d);
-        fmt::print("{},{},{},{},{},{},{}\n", tid, "DDigest", (succeed ? 1 : 0),
-                   completed_time, seed, value_sz, d);
+        rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "DDigest",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz, d,
+                           _estimate_bk);
+        fmt::print("{},{},{},{},{},{},{},{}\n", tid, "DDigest",
+                   (succeed ? 1 : 0), completed_time, seed, value_sz, d,
+                   _estimate_bk);
         completed_time = 0;
         succeed = SetUp_PinSketch(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "PinSketch",
-                           (succeed ? 1 : 0), completed_time, seed, value_sz,
-                           d);
-        fmt::print("{},{},{},{},{},{},{}\n", tid, "PinSketch",
-                   (succeed ? 1 : 0), completed_time, seed, value_sz, d);
+        rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PinSketch",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz, d,
+                           _estimate_bk);
+        fmt::print("{},{},{},{},{},{},{},{}\n", tid, "PinSketch",
+                   (succeed ? 1 : 0), completed_time, seed, value_sz, d,
+                   _estimate_bk);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
-        rfp << fmt::format("{},{},{},{},{},{},{}\n", tid, "PBS",
-                           (succeed ? 1 : 0), completed_time, seed, value_sz,
-                           d);
-        fmt::print("{},{},{},{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
-                   completed_time, seed, value_sz, d);
+        rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
+                           (succeed ? 1 : 0), completed_time, seed, value_sz, d,
+                           _estimate_bk);
+        fmt::print("{},{},{},{},{},{},{},{}\n", tid, "PBS", (succeed ? 1 : 0),
+                   completed_time, seed, value_sz, d, _estimate_bk);
       }
     }
   }
@@ -636,15 +641,8 @@ class ReconciliationClient {
       checksums.insert(checksums.end(), reply.checksum().cbegin(),
                        reply.checksum().cend());
 
-      //      if (checksums.size() < 10)
-      //        fmt::print("checksums: {}\n", fmt::join(checksums.cbegin(),
-      //        checksums.cend(), " "));
-
       completed = _pbs->decodeCheck(decoding_message, xors, checksums);
       res = _pbs->differencesLastRound();
-
-      //      fmt::print("Round #{}: {:>6} of {:>6} decoded\n", _pbs->rounds(),
-      //                 res.size(), d);
 
     } while (true);
 
@@ -666,6 +664,8 @@ class ReconciliationClient {
     Status status = stub_->Estimate(&context, request, &reply);
     // Act upon its status.
     if (status.ok()) {
+      // added
+      _estimate_bk = ESTIMATE_SM99(reply.estimated_value());
       return reply.estimated_value();
     } else {
       std::cout << status.error_code() << ": " << status.error_message()
@@ -702,6 +702,8 @@ class ReconciliationClient {
  private:
   std::unique_ptr<Estimation::Stub> stub_;
   TugOfWarHash<XXHash> _estimator;
+
+  size_t _estimate_bk{};
 };
 
 #endif  // RECONCILIATION_CLIENT_H_

@@ -393,9 +393,6 @@ class EstimationServiceImpl final : public Estimation::Service {
     for (auto checksum : checksums)
       *(response->mutable_checksum()->Add()) = checksum;
 
-//    if (checksums.size() < 10)
-//      fmt::print("checksums: {}\n", fmt::join(checksums.cbegin(), checksums.cend(), " "));
-
     if (!request->pushed_key_values().empty()) {
       for (const auto &kv : request->pushed_key_values()) {
         if (_key_value_pairs->contains(kv.key()))
