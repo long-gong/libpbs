@@ -63,6 +63,7 @@ using reconciliation::SynchronizeMessage;
 
 namespace {
 constexpr unsigned PBS_MAX_ROUNDS = 3;
+constexpr auto SLEEP_TIME = 10ms;
 }
 // template<typename MyHash=XXHASH>
 class ReconciliationClient {
@@ -347,6 +348,7 @@ class ReconciliationClient {
                            -1);
         fmt::print("{},{},{},{},{},{},{},{}\n", tid, "Graphene",
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d, -1);
+        std::this_thread::sleep_for(SLEEP_TIME);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
@@ -367,7 +369,7 @@ class ReconciliationClient {
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                    _estimate_bk);
 
-        std::this_thread::sleep_for(1s);
+        std::this_thread::sleep_for(SLEEP_TIME);
         completed_time = 0;
         succeed = SetUp_PinSketch(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PinSketch",
@@ -377,7 +379,7 @@ class ReconciliationClient {
                    (succeed ? 1 : 0), completed_time, seed, value_sz, d,
                    _estimate_bk);
 
-        std::this_thread::sleep_for(1s);
+        std::this_thread::sleep_for(SLEEP_TIME);
         completed_time = 0;
         succeed = SetUp_PBS(usz, d, value_sz, seed, completed_time);
         rfp << fmt::format("{},{},{},{},{},{},{},{}\n", tid, "PBS",
