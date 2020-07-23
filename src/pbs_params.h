@@ -28,7 +28,7 @@ namespace {
 constexpr size_t MAX_BALLS = 200;
 constexpr size_t M_MIN = 6;
 constexpr size_t M_MAX = 14;
-constexpr double ONE_IN_240 = ((double)1.0) / 240.0;
+constexpr double TWO_THREE_NINE_IN_240 = ((double)239.0) / 240.0;
 inline void make_sure_cache_dir_exists() {
   boost::filesystem::path dir(DEFAULT_CACHE_DIR);
   if (!boost::filesystem::exists(dir))
@@ -38,7 +38,7 @@ inline std::string getCachedFilename(double targetProb) {
   make_sure_cache_dir_exists();
   if (std::abs(targetProb - 0.99) < std::numeric_limits<double>::epsilon()) {
     return std::string(DEFAULT_CACHE_DIR) + "best_bch_parameters_99.csv";
-  } else if (std::abs(targetProb - ONE_IN_240) <
+  } else if (std::abs(targetProb - TWO_THREE_NINE_IN_240) <
              std::numeric_limits<double>::epsilon()) {
     return std::string(DEFAULT_CACHE_DIR) + "best_bch_parameters_9958.csv";
   } else {
