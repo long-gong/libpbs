@@ -64,7 +64,7 @@ using reconciliation::SynchronizeMessage;
 namespace {
 constexpr unsigned PBS_MAX_ROUNDS = 3;
 constexpr auto SLEEP_TIME = 10ms;
-}
+}  // namespace
 // template<typename MyHash=XXHASH>
 class ReconciliationClient {
  public:
@@ -297,13 +297,13 @@ class ReconciliationClient {
                                               Key>(key_value_pairs, usz,
                                                    value_sz, exp_seed);
     // for debugging
-//    if (exp_seed == 1406943807) {
-//      std::ofstream os("data.txt");
-//      for (const auto& kv: key_value_pairs) {
-//        os << kv.first << " " << kv.second << "\n";
-//      }
-//      os.close();
-//    }
+    //    if (exp_seed == 1406943807) {
+    //      std::ofstream os("data.txt");
+    //      for (const auto& kv: key_value_pairs) {
+    //        os << kv.first << " " << kv.second << "\n";
+    //      }
+    //      os.close();
+    //    }
 
     only_for_benchmark::SimpleTimer timer;
     completed_time = 0;
@@ -645,19 +645,37 @@ class ReconciliationClient {
       decoding_message.parse((const uint8_t *)reply.decoding_msg().c_str(),
                              reply.decoding_msg().size());
 
-      if (!reply.xors().empty()) xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
-      if (!reply.checksum().empty()) checksums.insert(checksums.end(), reply.checksum().cbegin(),
-                       reply.checksum().cend());
+      auto byte2uint32 = [](const uint32_t *cfirst, size_t sz,
+                            std::vector<uint64_t> &res) {
+        res.reserve(sz);
+        for (size_t i = 0; i < sz; ++i) {
+          res.push_back(*cfirst);
+          ++cfirst;
+        }
+      };
+
+      if (!reply.xors().empty()) {
+        // xors.insert(xors.end(), reply.xors().cbegin(), reply.xors().cend());
+        auto xors_sz = reply.xors().size() / sizeof(uint32_t);
+        byte2uint32((const uint32_t *)&reply.xors()[0], xors_sz, xors);
+      }
+      if (!reply.checksum().empty()) {
+        //        checksums.insert(checksums.end(),
+        //        reply.checksum().cbegin(),reply.checksum().cend());
+        auto checksum_sz = reply.checksum().size() / sizeof(uint32_t);
+        byte2uint32((const uint32_t *)&reply.checksum()[0], checksum_sz, checksums);
+      }
 
       try {
         completed = _pbs->decodeCheck(decoding_message, xors, checksums);
       } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
-        fmt::print("DumpInfo: m {}, t {}, est_d {}, number of groups {}, # of rounds: {}, response: {}\n",
-                   _pbs->bchParameterM(), _pbs->bchParameterT(), scaled_d,
-                   _pbs->numberOfGroups(), _pbs->rounds(),
-                   fmt::join(reply.checksum().cbegin(), reply.checksum().cend(),
-                             " "));
+        fmt::print(
+            "DumpInfo: m {}, t {}, est_d {}, number of groups {}, # of rounds: "
+            "{}, response: {}\n",
+            _pbs->bchParameterM(), _pbs->bchParameterT(), scaled_d,
+            _pbs->numberOfGroups(), _pbs->rounds(),
+            fmt::join(reply.checksum().cbegin(), reply.checksum().cend(), " "));
         return false;
       }
       res = _pbs->differencesLastRound();

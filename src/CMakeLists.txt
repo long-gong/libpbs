@@ -59,6 +59,26 @@ target_link_libraries(server
         Eigen3::Eigen
         fmt::fmt)
 
+add_executable(server995 "reconciliation_server.cpp"
+        ${proto_srcs}
+        ${grpc_srcs}
+        ${ddigest_objs})
+target_compile_definitions(server995 PRIVATE -DTARGET_SUCCESS_PROB)
+target_include_directories(server995
+        PRIVATE
+        ${GRPCPP_INCLUDE_DIRS})
+target_link_libraries(server995
+        gRPC::grpc++ gRPC::grpc++_reflection
+        ${_PROTOBUF_LIBPROTOBUF}
+        xxhash
+        minisketch
+        GTest::GTest
+        GTest::Main
+        Boost::serialization
+        Boost::filesystem
+        Eigen3::Eigen
+        fmt::fmt)
+
 add_executable(client "reconciliation_client.cpp"
         ${proto_srcs}
         ${grpc_srcs}
@@ -79,6 +99,26 @@ target_link_libraries(client
         Eigen3::Eigen
         fmt::fmt)
 
+add_executable(client995 "reconciliation_client.cpp"
+        ${proto_srcs}
+        ${grpc_srcs}
+        ${ddigest_objs})
+target_compile_definitions(client995 PRIVATE -DTARGET_SUCCESS_PROB)
+target_include_directories(client995
+        PRIVATE
+        ${GRPCPP_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(client995
+        gRPC::grpc++ gRPC::grpc++_reflection
+        ${_PROTOBUF_LIBPROTOBUF}
+        xxhash
+        minisketch
+        GTest::GTest
+        GTest::Main
+        Boost::serialization
+        Boost::filesystem
+        Eigen3::Eigen
+        fmt::fmt)
 ## TESTS ##
 enable_testing()
 add_executable(test_pbs_messages "../test/test_pbs_messages.cpp")

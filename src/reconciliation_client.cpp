@@ -29,9 +29,8 @@ int main(int argc, char **argv) {
 #ifndef TARGET_SUCCESS_PROB
   bool pbs_only = false;
 #else
-
-  constexpr double DEFAULT_CB = (1.0 - 239.0 / 240);
-  static_assert( std::abs(TARGET_SUCCESS_PROB - DEFAULT_CB) < 1e-5, "TARGET_SUCCESS_PROB should 1/240" );
+//  constexpr double DEFAULT_CB = (1.0 - 239.0 / 240);
+//  static_assert( std::abs(TARGET_SUCCESS_PROB - DEFAULT_CB) < 1e-5, "TARGET_SUCCESS_PROB should 1/240" );
   bool pbs_only = true;
 #endif
 

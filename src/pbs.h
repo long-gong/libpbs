@@ -40,7 +40,7 @@ constexpr unsigned DEFAULT_NUM_GROUPS_WHEN_BCH_FAIL = 3;
 #ifndef TARGET_SUCCESS_PROB
 constexpr double DEFAULT_TARGET_SUCCESS_PROB = 0.99;
 #else
-constexpr double DEFAULT_TARGET_SUCCESS_PROB = TARGET_SUCCESS_PROB;
+constexpr double DEFAULT_TARGET_SUCCESS_PROB = 239.0 / 240;
 #endif
 
 constexpr uint64_t DEFAULT_SEED_G = 0x6d496e536b65LU;

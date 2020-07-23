@@ -381,25 +381,44 @@ class EstimationServiceImpl final : public Estimation::Service {
 
     auto ssz = decoding_msg->serializedSize();
     response->mutable_decoding_msg()->resize(ssz, 0);
-
     decoding_msg->write((uint8_t *)&(*response->mutable_decoding_msg())[0]);
 
+    /*
     for (auto xor_each : xors) *(response->mutable_xors()->Add()) = xor_each;
-    for (auto checksum : checksums)
-      *(response->mutable_checksum()->Add()) = checksum;
+     */
+    /// We changed the type of xors and checksum from repeated uint32
+    // to bytes since we found that sometime checksum is missing (when it is not
+    // empty) when xors is empty; though the previous types are more preferable.
+    auto uint2bytes = [](uint32_t *to, const std::vector<uint64_t> &from) {
+      std::copy(from.cbegin(), from.cend(), to);
+    };
 
-//    if (decoding_msg->num_groups == 1) {
-//      fmt::print(
-//          "decoding message:\n\t# of diffs: {}\n\tdiffs: {}\n\tchecksum: "
-//          "{}\n\tresponse: {}\n",
-//          fmt::join(decoding_msg->decoded_num_differences.cbegin(),
-//                    decoding_msg->decoded_num_differences.end(), " "),
-//          fmt::join(decoding_msg->decoded_differences.cbegin(),
-//                    decoding_msg->decoded_differences.cend(), " "),
-//          fmt::join(checksums.cbegin(), checksums.cend(), " "),
-//          fmt::join(response->checksum().cbegin(), response->checksum().cend(),
-//                    " "));
-//    }
+    if (!xors.empty()) {
+      auto sz = xors.size() * sizeof(uint32_t);
+      response->mutable_xors()->resize(sz, 0);
+      uint2bytes((uint32_t *)&(*response->mutable_xors())[0], xors);
+    }
+    if (!checksums.empty()) {
+      auto sz = checksums.size() * sizeof(uint32_t);
+      response->mutable_checksum()->resize(sz, 0);
+      uint2bytes((uint32_t *)&(*response->mutable_checksum())[0], checksums);
+    }
+    //    for (auto checksum : checksums)
+    //      *(response->mutable_checksum()->Add()) = checksum;
+
+    //    if (decoding_msg->num_groups == 1) {
+    //      fmt::print(
+    //          "decoding message:\n\t# of diffs: {}\n\tdiffs: {}\n\tchecksum: "
+    //          "{}\n\tresponse: {}\n",
+    //          fmt::join(decoding_msg->decoded_num_differences.cbegin(),
+    //                    decoding_msg->decoded_num_differences.end(), " "),
+    //          fmt::join(decoding_msg->decoded_differences.cbegin(),
+    //                    decoding_msg->decoded_differences.cend(), " "),
+    //          fmt::join(checksums.cbegin(), checksums.cend(), " "),
+    //          fmt::join(response->checksum().cbegin(),
+    //          response->checksum().cend(),
+    //                    " "));
+    //    }
 
     if (!request->pushed_key_values().empty()) {
       for (const auto &kv : request->pushed_key_values()) {
