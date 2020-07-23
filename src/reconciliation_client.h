@@ -324,7 +324,7 @@ class ReconciliationClient {
                                   unsigned exp_seed, size_t repeats = 100,
                                   bool only_pbs = false) {
     std::string res_filename = fmt::format(
-        "reconciliation_result_{}_{}_{}_{}.csv", usz, d, exp_seed, repeats);
+        "reconciliation_result_{}_{}_{}_{}_{}.csv", usz, d, value_sz, exp_seed, repeats);
     std::ofstream rfp(res_filename);
     if (!rfp.is_open()) {
       throw std::runtime_error(
